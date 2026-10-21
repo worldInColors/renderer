@@ -54,6 +54,7 @@ export class WorldMeshBuilder {
 	private schematicRenderer: SchematicRenderer;
 	private cubane: Cubane;
 	private paletteCache: PaletteCache | null = null;
+	private paletteUsesFluidSurface = false;
 	private instancedRenderer: InstancedBlockRenderer | null = null;
 	private useInstancedRendering: boolean = false;
 
@@ -476,11 +477,15 @@ export class WorldMeshBuilder {
 		}
 	}
 
-	public async precomputePaletteGeometries(palette: any[]): Promise<void> {
+	public async precomputePaletteGeometries(palette: any[], fluidSurface = false): Promise<void> {
 		performanceMonitor.startOperation("precomputePaletteGeometries");
 
 		// Check if palette is effectively the same
-		if (this.paletteCache?.isReady && this.paletteCache.palette.length === palette.length) {
+		if (
+			this.paletteCache?.isReady &&
+			this.paletteUsesFluidSurface === fluidSurface &&
+			this.paletteCache.palette.length === palette.length
+		) {
 			// Quick heuristic check: if length is same and first/last items match, assume same palette
 			// (Since palette order is usually deterministic from WASM)
 			const firstMatch =
@@ -550,9 +555,15 @@ export class WorldMeshBuilder {
 				// Create material groups for this block type
 				const materialGroups: PaletteMaterialGroup[] = [];
 				const geometryData: any[] = [];
+				let removedFluid = false;
 
 				for (const { geometry, material } of extractedGeometries) {
 					if (geometry.attributes.position.count === 0) continue;
+					if (fluidSurface && (material.userData.isWater || material.userData.isLava)) {
+						removedFluid = true;
+						geometry.dispose();
+						continue;
+					}
 
 					// Get or create shared material
 					const sharedMaterial = MaterialRegistry.getMaterial(material);
@@ -608,10 +619,15 @@ export class WorldMeshBuilder {
 						indices: geometry.index?.array || null,
 						materialIndex: materialIndex,
 						anim,
+						// Use the original material: the registry may share atlas materials
+						// between water and blocks with otherwise identical settings.
+						fluid: material.userData.isWater
+							? "water"
+							: material.userData.isLava ? "lava" : undefined,
 					});
 				}
 
-				const category = this.getBlockCategory(blockState.name, blockState.properties);
+				const category = this.getBlockCategory(blockState.name, blockState.properties, !fluidSurface);
 
 				paletteBlockData[index] = {
 					blockName: blockState.name,
@@ -621,7 +637,9 @@ export class WorldMeshBuilder {
 
 				// Add to worker payload
 				if (geometryData.length > 0) {
-					const occlusionFlags = await this.computeOcclusionFlags(blockString, category);
+					const occlusionFlags = removedFluid
+						? 0
+						: await this.computeOcclusionFlags(blockString, category);
 					paletteGeometryData.push({
 						index,
 						category,
@@ -653,6 +671,7 @@ export class WorldMeshBuilder {
 			}
 		}
 
+		this.paletteUsesFluidSurface = fluidSurface;
 		this.paletteCache = {
 			palette: palette,
 			blockData: paletteBlockData,
@@ -1815,16 +1834,16 @@ export class WorldMeshBuilder {
 
 	private getBlockCategory(
 		blockName: string,
-		properties?: Record<string, string>
+		properties?: Record<string, string>,
+		includesFluid = true
 	): keyof ChunkMeshes {
 		if (blockName.includes("water") || blockName.includes("lava")) return "water";
-		// Waterlogged blocks carry a surrounding water cube that must cull against
-		// neighbouring water (real water or other waterlogged cells), so they render
-		// in the water category. Their own geometry is unaffected: cross/non-flush
-		// faces never cull, and solid faces simply draw in the water pass.
+		// Only legacy templates still include the surrounding water cube. Once the
+		// shared surface owns water, the host must draw BEFORE it; putting the host
+		// in the water pass lets transparent sorting paint it over the water.
 		if (
-			properties?.waterlogged === "true" ||
-			WorldMeshBuilder.IMPLICIT_WATERLOGGED.has(blockName)
+			includesFluid && (properties?.waterlogged === "true" ||
+			WorldMeshBuilder.IMPLICIT_WATERLOGGED.has(blockName))
 		) {
 			return "water";
 		}
@@ -1864,22 +1883,20 @@ export class WorldMeshBuilder {
 	private extractAllMeshData(rootCubaneObject: THREE.Object3D): ProcessedBlockGeometry[] {
 		const allMeshData: ProcessedBlockGeometry[] = [];
 		rootCubaneObject.updateMatrixWorld(true);
+		const inverseRoot = rootCubaneObject.matrixWorld.clone().invert();
 
 		rootCubaneObject.traverse((child) => {
 			if (
 				child instanceof THREE.Mesh &&
 				child.geometry &&
 				child.material &&
-				child.visible &&
-				child !== rootCubaneObject
+				child.visible
 			) {
 				const material = Array.isArray(child.material) ? child.material[0] : child.material;
 				if (!material || !(material instanceof THREE.Material)) return;
 
 				const geometry = child.geometry.clone();
-				const matrixRelativeToRoot = child.matrixWorld
-					.clone()
-					.multiply(new THREE.Matrix4().copy(rootCubaneObject.matrixWorld).invert());
+				const matrixRelativeToRoot = inverseRoot.clone().multiply(child.matrixWorld);
 				geometry.applyMatrix4(matrixRelativeToRoot);
 
 				if (geometry.attributes.position.count > 0) {

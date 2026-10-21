@@ -7,6 +7,8 @@
 // Chest per-cell template system (design: "Chest rendering port — review")
 // ============================================================================
 
+import * as THREE from "three";
+
 export type ChestType = "single" | "left" | "right";
 export type ChestFacing = "north" | "east" | "south" | "west";
 export type ChestKind = "normal" | "trapped" | "ender";
@@ -396,6 +398,24 @@ export interface ChestAssetLoaderLike {
 	getTexture(path: string): THREE.Texture | Promise<THREE.Texture>;
 }
 
+/** The same state-aware templates used by GPU instances, for the CPU palette. */
+export async function buildChestBlockMesh(
+	state: unknown,
+	al: ChestAssetLoaderLike
+): Promise<THREE.Mesh | null> {
+	const kind = chestKindOf({ state });
+	if (!kind) return null;
+	const type = kind === "ender" ? "single" : asChestType(chestStateProp(state, "type"));
+	const facing = asChestFacing(chestStateProp(state, "facing"));
+	const texture = await al.getTexture(chestTexturePath(kind, type));
+	const geometry = chestModelGeo(type);
+	geometry.translate(-0.5, -0.5, -0.5);
+	geometry.rotateY(CHEST_FACING_THETA[facing]);
+	const mesh = new THREE.Mesh(geometry, chestMaterialFor(texture, new Map()));
+	mesh.name = `chest:${kind}:${facing}:${type}`;
+	return mesh;
+}
+
 /**
  * Per-cell chest rendering. Re-buckets by FULL state (kind + facing + type);
  * one InstancedMesh per full state, one instance per cell, each half drawn
@@ -408,7 +428,7 @@ export async function buildChestInstancedMeshes<B extends ChestBucketLike>(
 	sx: number,
 	sy: number,
 	sz: number
-): { meshes: THREE.InstancedMesh[]; rest: B[] } {
+): Promise<{ meshes: THREE.InstancedMesh[]; rest: B[] }> {
 	interface Group {
 		kind: ChestKind;
 		facing: ChestFacing;

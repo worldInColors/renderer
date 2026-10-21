@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Block model regression viewer</title>
+		<style>
+			body { margin: 0; color: #eef3fa; background: #10151f; font: 14px system-ui; }
+			canvas { display: block; width: 100vw; height: 100vh; }
+			header { position: absolute; top: 16px; left: 16px; z-index: 10; background: #17202ee8; padding: 12px 16px; border-radius: 8px; }
+			h1 { font-size: 18px; margin: 0 0 10px; }
+			button { padding: 6px 10px; }
+			p { margin: 8px 0 0; }
+		</style>
+	</head>
+	<body>
+		<header>
+			<h1>Block models: chests, scaffolding, bubble columns</h1>
+			<input id="file" type="file" accept=".litematic,.schem,.schematic" disabled />
+			<button id="chest" disabled>Chests</button>
+			<button id="scaffolding" disabled>Scaffolding</button>
+			<button id="bubble_column" disabled>Bubble columns</button>
+			<label>Inspect <select id="blocks" disabled></select></label>
+			<button id="next" disabled>Next block</button>
+			<button id="overview" disabled>Overview</button>
+			<p id="status">Loading the default resource pack…</p>
+			<p id="pack-status">Loading textures…</p>
+		</header>
+		<canvas id="canvas"></canvas>
+		<script type="module" src="./scripts/block-models.ts"></script>
+	</body>
+</html>

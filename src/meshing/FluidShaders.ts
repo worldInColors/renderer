@@ -1,4 +1,5 @@
-// FluidShaders.ts — water/lava surface shader (fable design, verbatim).
+// Fluid surface shaders. Water uses the resource pack's still/flow animations;
+// lava retains the two-phase flow shader below.
 // Consumes the fluid mesher's attributes: aFace (0 top, 1 bottom, 2 -z, 3 +z,
 // 4 -x, 5 +x) and aFlow (xy = downhill gradient, z = falling flag), with the
 // position attribute carrying group-local CENTER-indexed coordinates
@@ -16,6 +17,68 @@ void main() {
   vFace = int(aFace + 0.5);
   vFlow = aFlow;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+// Two texture reads per fragment instead of the lava shader's eight. Explicit
+// gradients keep mip selection defined across the per-face still/flow branch.
+export const WATER_FRAG = /* glsl */ `
+precision highp float;
+precision highp int;
+precision highp sampler2DArray;
+
+uniform sampler2DArray uTex;
+uniform sampler2DArray uFlowTex;
+uniform float uHasTex;
+uniform vec3 uTint;
+uniform vec3 uStillFrame; // current layer, next layer, interpolation
+uniform vec3 uFlowFrame;
+uniform float uAlpha;
+
+in vec3 vPos;
+flat in int vFace;
+flat in vec3 vFlow;
+layout(location = 0) out vec4 fragColor;
+
+void main() {
+  vec3 dx = dFdx(vPos);
+  vec3 dy = dFdy(vPos);
+  bool side = vFace > 1;
+  float speed = length(vFlow.xy);
+  bool flowing = side || (vFace == 0 && speed > 0.01);
+  vec2 uv;
+  vec2 du;
+  vec2 dv;
+  if (side) {
+    // Array layers use image coordinates (Y down). A 32px flow tile spans
+    // two blocks, matching the game's 16px/block water texture scale.
+    uv = vec2(vPos.x + vPos.z + 0.5, 0.5 - vPos.y) * 0.5;
+    du = vec2(dx.x + dx.z, -dx.y) * 0.5;
+    dv = vec2(dy.x + dy.z, -dy.y) * 0.5;
+  } else {
+    uv = vPos.xz + 0.5;
+    du = dx.xz;
+    dv = dy.xz;
+    if (flowing) {
+      vec2 dir = vFlow.xy / speed;
+      mat2 rotation = mat2(dir.y, dir.x, -dir.x, dir.y);
+      uv = rotation * uv * 0.5;
+      du = rotation * du * 0.5;
+      dv = rotation * dv * 0.5;
+    }
+  }
+  vec4 color = vec4(uTint * 0.6, 0.6);
+  if (uHasTex > 0.5) {
+    if (flowing) {
+      color = mix(textureGrad(uFlowTex, vec3(uv, uFlowFrame.x), du, dv),
+                  textureGrad(uFlowTex, vec3(uv, uFlowFrame.y), du, dv), uFlowFrame.z);
+    } else {
+      color = mix(textureGrad(uTex, vec3(uv, uStillFrame.x), du, dv),
+                  textureGrad(uTex, vec3(uv, uStillFrame.y), du, dv), uStillFrame.z);
+    }
+  }
+  float shade = vFace == 0 ? 1.0 : (vFace == 1 ? 0.5 : (vFace <= 3 ? 0.8 : 0.6));
+  fragColor = vec4(color.rgb * shade, color.a * uAlpha);
 }
 `;
 
@@ -44,7 +107,7 @@ uniform float uGain;        // contrast gain around the mean
 uniform float uFoam;
 uniform float uLodBias;
 uniform float uMaxLod;
-uniform float uAlpha;     // 1.0 opaque; 0.5 for the waterlogged bucket
+uniform float uAlpha;
 
 in vec3 vPos;
 flat in int  vFace;

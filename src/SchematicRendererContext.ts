@@ -4,6 +4,7 @@ import { ResourcePackManager, DefaultPackCallback } from "./managers/ResourcePac
 import MeshBuilderWorker from "./workers/MeshBuilder.worker?worker&inline";
 import MeshBuilderWasmWorker from "./workers/MeshBuilderWasm.worker?worker&inline";
 import { getClampedPixelRatio } from "./utils/pixelRatio";
+import { initializeResourcePacks } from "./utils/initializeResourcePacks";
 
 export interface SchematicRendererContextOptions {
 	/** Render unknown blocks as a purple placeholder (defaults to false). */
@@ -117,27 +118,8 @@ export class SchematicRendererContext {
 	): Promise<SchematicRendererContext> {
 		const cubane = new Cubane({ showUnknownBlocks: options.showUnknownBlocks });
 		const resourcePackManager = new ResourcePackManager(options.resourcePackOptions);
-		await resourcePackManager.initPromise;
-
-		const blobs = await resourcePackManager.getResourcePackBlobs(defaultResourcePacks);
-		if (blobs.length > 0) {
-			// Batch mode → single atlas rebuild after all packs load.
-			cubane.beginPackBatchUpdate();
-			try {
-				for (let i = 0; i < blobs.length; i++) {
-					try {
-						await cubane.loadResourcePack(blobs[i] as Blob);
-					} catch (error) {
-						console.error(
-							`[SchematicRendererContext] Failed to load resource pack ${i + 1}:`,
-							error
-						);
-					}
-				}
-			} finally {
-				await cubane.endPackBatchUpdate();
-			}
-		} else {
+		await initializeResourcePacks(cubane, resourcePackManager, defaultResourcePacks);
+		if (cubane.getPackCount() === 0) {
 			console.info(
 				"[SchematicRendererContext] No resource pack provided — blocks will render with placeholder textures."
 			);

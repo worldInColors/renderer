@@ -6,8 +6,19 @@
  * auto-orbit, camera-path tweens, recording, simulation). Kept dependency-free
  * so it is trivially unit-testable without a WebGL context.
  */
-export function shouldRenderFrame(state: { needsRender: boolean; continuous: boolean }): boolean {
-	return state.needsRender || state.continuous;
+export function shouldRenderFrame(state: {
+	needsRender: boolean;
+	continuous: boolean;
+	particlesAnimating?: boolean;
+	elapsedMs?: number;
+}): boolean {
+	// Particle motion needs redraws even with static textures. Cap idle animation
+	// at Minecraft's 20 Hz tick rate instead of keeping the display at full refresh.
+	return (
+		state.needsRender ||
+		state.continuous ||
+		(!!state.particlesAnimating && (state.elapsedMs ?? 0) >= 50)
+	);
 }
 
 /**
