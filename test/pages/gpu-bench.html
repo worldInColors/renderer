@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>GPU Mesher — two-pass benchmark</title>
+<style>
+  body { font-family: ui-monospace, monospace; background: #09090b; color: #e4e4e7; margin: 2rem; }
+  h1 { color: #34d399; font-size: 1.2rem; }
+  button { background: #059669; color: white; border: 0; padding: 0.5rem 1rem; border-radius: 6px; font-family: inherit; cursor: pointer; margin-right: 0.5rem; margin-bottom: 0.5rem; }
+  #log { white-space: pre-wrap; background: #18181b; padding: 1rem; border-radius: 8px; margin-top: 1rem; font-size: 0.85rem; line-height: 1.5; }
+  .pass { color: #34d399; font-weight: bold; } .fail { color: #f87171; font-weight: bold; } .info { color: #93c5fd; }
+</style>
+</head>
+<body>
+<h1>GPU Mesher — two-pass benchmark (count → exact alloc → emit)</h1>
+<div>
+  <button data-b="cubes">cubes 104k</button>
+  <button data-b="stress">stress 104k</button>
+  <button data-b="medium">stress 540k</button>
+  <button data-b="big">stress 3.1M</button>
+</div>
+<div id="log">ready (verification runs on cubes/stress; medium/big report counts)</div>
+<script type="module">
+const VERIFY = {
+  cubes:   { solid: ['242282', 'f304740c'], transparent: ['199316', '4d1c71d8'] },
+  stress:  { solid: ['711650', '81b72f68'], transparent: ['205760', '236e9b38'] },
+  medium:  { total: 4935510 },
+  big:     { total: 29900000 },
+};
+const log = (s, cls) => { const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = s; document.getElementById('log').appendChild(d); };
+
+const canonHash = (pos, idx, count) => {
+  let h = 0x811c9dc5; const tris = [];
+  for (let t = 0; t + 2 < count; t += 3) {
+    const v = [];
+    for (let k = 0; k < 3; k++) { const vi = idx[t + k]; v.push(Math.round(pos[vi * 3] * 1024) + ',' + Math.round(pos[vi * 3 + 1] * 1024) + ',' + Math.round(pos[vi * 3 + 2] * 1024)); }
+    v.sort(); tris.push(v.join(';'));
+  }
+  tris.sort();
+  for (const t of tris) for (let c = 0; c < t.length; c++) { h ^= t.charCodeAt(c); h = (h * 0x01000193) >>> 0; }
+  return { tris: tris.length, hash: h.toString(16) };
+};
+
+async function bench(which) {
+  const tFetch0 = performance.now();
+  const bundle = await fetch(`/gpu-mesher/${which}.bundle.json`).then((r) => r.json());
+  const shader = await fetch('/gpu-mesher/mesher.wgsl').then((r) => r.text());
+  const tFetch = performance.now() - tFetch0;
+  log(`\n=== ${which}: fetch+parse bundle ${tFetch.toFixed(0)}ms ===`, 'info');
+
+  const adapter = await navigator.gpu.requestAdapter();
+  const device = await adapter.requestDevice({ requiredLimits: { maxStorageBuffersPerShaderStage: 16 } });
+  const { sx, sy, sz } = bundle;
+  const nCat = bundle.categories.length;
+
+  const tUp0 = performance.now();
+  const mk = (arr, usage) => { const b = device.createBuffer({ size: (arr.byteLength + 3) & ~3, usage: usage | GPUBufferUsage.COPY_DST }); device.queue.writeBuffer(b, 0, arr); return b; };
+  const F32 = (a) => new Float32Array(a), U32 = (a) => new Uint32Array(a);
+  const bufs = {
+    grid: mk(U32(bundle.grid), GPUBufferUsage.STORAGE),
+    desc: mk(U32(bundle.desc), GPUBufferUsage.STORAGE),
+    desc2: mk(U32(bundle.desc2), GPUBufferUsage.STORAGE),
+    tplPos: mk(F32(bundle.tplPos), GPUBufferUsage.STORAGE),
+    tplIdx: mk(U32(bundle.tplIdx), GPUBufferUsage.STORAGE),
+    tplCull: mk(U32(bundle.tplTriCull), GPUBufferUsage.STORAGE),
+    catOffsets: mk(U32(new Array(nCat).fill(0)), GPUBufferUsage.STORAGE),
+  };
+  const dimsBuf = mk(U32([sx, sy, sz, 0]), GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
+  const counters = device.createBuffer({ size: 16 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+  const countersRead = device.createBuffer({ size: 16 * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  const module = device.createShaderModule({ code: shader });
+  const pipeline = device.createComputePipeline({ layout: 'auto', compute: { module, entryPoint: 'main' } });
+
+  const mkBind = (outPos, outIdx) => device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
+    { binding: 0, resource: { buffer: bufs.grid } }, { binding: 1, resource: { buffer: dimsBuf } },
+    { binding: 2, resource: { buffer: bufs.desc } }, { binding: 3, resource: { buffer: bufs.desc2 } },
+    { binding: 4, resource: { buffer: bufs.tplPos } }, { binding: 5, resource: { buffer: bufs.tplIdx } },
+    { binding: 6, resource: { buffer: bufs.tplCull } }, { binding: 7, resource: { buffer: outPos } },
+    { binding: 8, resource: { buffer: outIdx } }, { binding: 9, resource: { buffer: counters } },
+    { binding: 10, resource: { buffer: bufs.catOffsets } },
+  ] });
+  const readCounters = async () => {
+    const e = device.createCommandEncoder(); e.copyBufferToBuffer(counters, 0, countersRead, 0, 64);
+    device.queue.submit([e.finish()]);
+    await countersRead.mapAsync(GPUMapMode.READ);
+    const c = new Uint32Array(countersRead.getMappedRange().slice(0)); countersRead.unmap(); return c;
+  };
+
+  const wx = Math.ceil(sx / 4), wy = Math.ceil(sy / 4), wz = Math.ceil(sz / 4);
+  const dummyA = device.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const dummyB = device.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }); // separate: writable-storage aliasing is a validation error
+
+  // PASS 1: count (dummy outputs)
+  let t0 = performance.now();
+  device.queue.writeBuffer(dimsBuf, 0, U32([sx, sy, sz, 0]));
+  let enc = device.createCommandEncoder(); let pass = enc.beginComputePass();
+  pass.setPipeline(pipeline); pass.setBindGroup(0, mkBind(dummyA, dummyB));
+  pass.dispatchWorkgroups(wx, wy, wz); pass.end(); device.queue.submit([enc.finish()]);
+  await device.queue.onSubmittedWorkDone();
+  const tCount = performance.now() - t0;
+  const counts = await readCounters();
+  log('  DEBUG [12]=invocations [13]=nonair [14]=pastair: ' + [counts[12], counts[13], counts[14]].join(', ') + ' (cells: ' + (sx*sy*sz) + ')', 'info');
+  const tUp = performance.now() - tUp0 - tCount;
+  const tris = []; let tot = 0;
+  for (let c = 0; c < nCat; c++) { tris.push(counts[c * 2 + 1] / 3); tot += counts[c * 2 + 1] / 3; } // counters hold VERTICES (3/tri)
+  log(`  upload+prep: ${tUp.toFixed(0)}ms | PASS1 count: ${tCount.toFixed(1)}ms | ${tot.toLocaleString()} tris (${bundle.categories.map((c, i) => c + ' ' + tris[i].toLocaleString()).join(', ')})`);
+
+  // exact alloc + offsets
+  const offsets = []; let acc = 0;
+  for (let c = 0; c < nCat; c++) { const verts = counts[c * 2 + 1]; offsets.push(acc); acc += Math.ceil((verts + 64) / 64) * 64; } // size in VERTS (3/tri)
+  device.queue.writeBuffer(bufs.catOffsets, 0, U32(offsets));
+  device.queue.writeBuffer(counters, 0, U32(new Array(16).fill(0)));
+  const outPos = device.createBuffer({ size: acc * 3 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+  const outIdx = device.createBuffer({ size: acc * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+
+  // PASS 2: emit
+  t0 = performance.now();
+  device.queue.writeBuffer(dimsBuf, 0, U32([sx, sy, sz, 1]));
+  enc = device.createCommandEncoder(); pass = enc.beginComputePass();
+  pass.setPipeline(pipeline); pass.setBindGroup(0, mkBind(outPos, outIdx));
+  pass.dispatchWorkgroups(wx, wy, wz); pass.end(); device.queue.submit([enc.finish()]);
+  await device.queue.onSubmittedWorkDone();
+  const tEmit = performance.now() - t0;
+  log(`  PASS2 emit: ${tEmit.toFixed(1)}ms | GPU total (count+emit): ${(tCount + tEmit).toFixed(1)}ms`, 'info');
+
+  // verification (small files)
+  const v = VERIFY[which];
+  if (v && v.solid !== undefined) {
+    async function readRange(buf, byteOff, len, ctor) {
+      const tmp = device.createBuffer({ size: len * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+      const e2 = device.createCommandEncoder(); e2.copyBufferToBuffer(buf, byteOff, tmp, 0, len * 4);
+      device.queue.submit([e2.finish()]); await tmp.mapAsync(GPUMapMode.READ);
+      const out = new ctor(tmp.getMappedRange().slice(0)); tmp.unmap(); tmp.destroy(); return out;
+    }
+    const cnt2 = await readCounters();
+    let allPass = true;
+    for (let c = 0; c < nCat; c++) {
+      const name = bundle.categories[c], nIdx = cnt2[c * 2 + 1], region = offsets[c];
+      const posArr = await readRange(outPos, region * 3 * 4, cnt2[c * 2] * 3, Float32Array);
+      const idxArr = await readRange(outIdx, region * 4, nIdx, Uint32Array);
+      const r = canonHash(posArr, idxArr, nIdx);
+      const exp = v[name];
+      const ok = exp && String(r.tris) === exp[0] && r.hash === exp[1];
+      if (!ok) allPass = false;
+      log(`  ${name}: ${r.tris} ${r.hash} vs ${exp ? exp.join(' ') : '?'} ${ok ? '✓' : '✗ FAIL'}`, ok ? 'pass' : 'fail');
+    }
+    log(allPass ? `★ ${which}: TWO-PASS ORACLE PASS` : `✗ ${which}: mismatch`, allPass ? 'pass' : 'fail');
+  } else if (v && v.total) {
+    log(`  total tris ${tot.toLocaleString()} vs CPU-batched ${v.total.toLocaleString()} (ratio ${(tot / v.total).toFixed(2)})`, 'info');
+  }
+}
+document.querySelectorAll('button').forEach((b) => b.onclick = () => bench(b.dataset.b).catch((e) => log('ERROR: ' + e.message, 'fail')));
+</script>
+</body>
+</html>

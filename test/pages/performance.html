@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Schematic Renderer - Performance Test</title>
+
+		<!-- Include your main JavaScript file -->
+		<script type="module" src="./scripts/performance.ts"></script>
+
+		<!-- DaisyUI -->
+		<link
+			href="https://cdn.jsdelivr.net/npm/daisyui@3.1.6/dist/full.css"
+			rel="stylesheet"
+			type="text/css"
+		/>
+
+		<!-- Alpine.js -->
+		<script
+			defer
+			src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
+		></script>
+
+		<!-- Tailwind CSS with DaisyUI -->
+		<script src="https://cdn.tailwindcss.com"></script>
+		<script>
+			tailwind.config = {
+				theme: {
+					extend: {
+						colors: {
+							primary: "#6b7280", // Modern gray-500
+							secondary: "#4b5563", // Modern gray-600
+							accent: "#10b981", // Emerald-500 for success states
+						},
+					},
+				},
+				daisyui: {
+					themes: ["dark", "light"],
+				},
+			};
+		</script>
+
+		<!-- Include Material Icons -->
+		<link
+			href="https://fonts.googleapis.com/icon?family=Material+Icons"
+			rel="stylesheet"
+		/>
+	</head>
+	<body
+		class="bg-gray-950 text-gray-100 min-h-screen font-mono"
+		x-data="performanceTest()"
+		x-init="init()"
+	>
+		<!-- Navigation -->
+		<nav
+			class="bg-gray-900 border-b border-gray-700 shadow-lg backdrop-blur-sm"
+		>
+			<div class="container mx-auto px-5 py-4">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-4">
+						<a
+							href="index.html"
+							class="bg-gray-800 text-gray-100 border border-gray-700 px-3 py-2 rounded-md text-sm hover:bg-gray-700 hover:border-gray-600 transition-colors flex items-center gap-2"
+						>
+							<span class="material-icons text-sm">arrow_back</span>
+							Back to Test Suite
+						</a>
+						<h1 class="text-xl font-bold text-gray-100">Performance Test</h1>
+					</div>
+					<div class="flex items-center gap-3">
+						<button
+							@click="runPerformanceTest"
+							class="bg-emerald-600 text-white border-none px-4 py-2 rounded-md text-sm cursor-pointer hover:bg-emerald-700 transition-colors flex items-center gap-2 shadow-sm"
+							:disabled="isRunning"
+						>
+							<span class="material-icons text-sm">speed</span>
+							Run Test
+						</button>
+						<button
+							@click="clearResults"
+							class="bg-gray-700 text-gray-100 border border-gray-600 px-4 py-2 rounded-md text-sm cursor-pointer hover:bg-gray-600 hover:border-gray-500 transition-colors flex items-center gap-2"
+						>
+							<span class="material-icons text-sm">clear</span>
+							Clear Results
+						</button>
+					</div>
+				</div>
+			</div>
+		</nav>
+
+		<!-- Include D3.js for visualization -->
+		<script src="https://d3js.org/d3.v7.min.js"></script>
+
+		<!-- Include Multi-Run Visualizer -->
+		<script src="./scripts/MultiRunVisualizer.js"></script>
+
+		<!-- Include Memory Leak Analyzer -->
+		<script src="./scripts/memory-leak-analyzer.js"></script>
+
+		<!-- Main Content -->
+		<div class="container mx-auto px-5 py-6">
+			<div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+				<!-- Test Configuration -->
+				<div class="lg:col-span-1">
+					<div
+						class="bg-gray-900/95 backdrop-blur-sm text-gray-100 font-mono p-6 rounded-xl shadow-xl border border-gray-700/50 h-full"
+					>
+						<div
+							class="flex items-center mb-6 pb-4 border-b border-gray-700/60"
+						>
+							<span class="material-icons text-lg mr-3 text-gray-400"
+								>settings</span
+							>
+							<h2 class="m-0 text-gray-100 text-xl font-bold">
+								Test Configuration
+							</h2>
+						</div>
+						<div class="space-y-5">
+							<div>
+								<label class="block text-sm text-gray-300 mb-2 font-medium"
+									>Schematic Type</label
+								>
+								<select
+									x-model="config.schematicType"
+									class="bg-gray-800/90 text-gray-100 border border-gray-600/50 rounded-md px-3 py-2 text-sm cursor-pointer w-full hover:border-gray-500 focus:border-gray-400 focus:outline-none transition-colors"
+								>
+									<option value="random">Random Noise (Standard)</option>
+									<option value="terrain">Terrain (Simplex Noise)</option>
+									<option value="complex">
+										Complex Blocks (Stairs/Fences/Torches)
+									</option>
+									<option value="transparent">
+										Transparent Blocks (Glass/Water)
+									</option>
+									<option value="stress">
+										Stress Test (Mixed High Detail)
+									</option>
+								</select>
+							</div>
+							<div>
+								<label class="block text-sm text-gray-300 mb-2 font-medium"
+									>Schematic Size</label
+								>
+								<select
+									x-model="config.schematicSize"
+									class="bg-gray-800/90 text-gray-100 border border-gray-600/50 rounded-md px-3 py-2 text-sm cursor-pointer w-full hover:border-gray-500 focus:border-gray-400 focus:outline-none transition-colors"
+								>
+									<option value="small">Small (16×16×16)</option>
+									<option value="medium">Medium (32×32×32)</option>
+									<option value="large">Large (64×64×64)</option>
+									<option value="huge">Huge (128×128×128)</option>
+									<option value="massive">Massive (256×64×256)</option>
+								</select>
+							</div>
+							<div>
+								<label class="block text-sm text-gray-300 mb-2 font-medium"
+									>Block Density</label
+								>
+								<select
+									x-model="config.blockDensity"
+									class="bg-gray-800/90 text-gray-100 border border-gray-600/50 rounded-md px-3 py-2 text-sm cursor-pointer w-full hover:border-gray-500 focus:border-gray-400 focus:outline-none transition-colors"
+								>
+									<option value="sparse">Sparse (25%)</option>
+									<option value="medium">Medium (50%)</option>
+									<option value="dense">Dense (75%)</option>
+									<option value="solid">Solid (100%)</option>
+								</select>
+							</div>
+							<div>
+								<label class="block text-sm text-gray-300 mb-2 font-medium"
+									>Mesh Building Mode</label
+								>
+								<select
+									x-model="config.meshBuildingMode"
+									class="bg-gray-800/90 text-gray-100 border border-gray-600/50 rounded-md px-3 py-2 text-sm cursor-pointer w-full hover:border-gray-500 focus:border-gray-400 focus:outline-none transition-colors"
+								>
+									<option value="batched">⚡ Batched (Fastest)</option>
+									<option value="incremental">Incremental</option>
+									<option value="immediate">Immediate</option>
+									<option value="instanced">Instanced</option>
+								</select>
+							</div>
+							<div>
+								<label
+									class="flex items-center gap-2 text-sm text-gray-300 font-medium cursor-pointer"
+								>
+									<input
+										type="checkbox"
+										x-model="config.greedyMeshing"
+										@change="toggleGreedyMeshing(config.greedyMeshing)"
+										class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-gray-900"
+									/>
+									<span>🔲 Greedy Meshing</span>
+									<span class="text-xs text-gray-500">(reduces vertices)</span>
+								</label>
+							</div>
+							<div>
+								<label class="block text-sm text-gray-300 mb-2 font-medium"
+									>Number of Runs</label
+								>
+								<select
+									x-model="config.numberOfRuns"
+									class="bg-gray-800/90 text-gray-100 border border-gray-600/50 rounded-md px-3 py-2 text-sm cursor-pointer w-full hover:border-gray-500 focus:border-gray-400 focus:outline-none transition-colors"
+								>
+									<option value="1">1 Run (Single)</option>
+									<option value="3">3 Runs (Quick)</option>
+									<option value="5">5 Runs (Standard)</option>
+									<option value="10">10 Runs (Detailed)</option>
+								</select>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Renderer Canvas -->
+				<div class="lg:col-span-2">
+					<div
+						class="relative w-full h-[80vh] bg-gray-900/95 backdrop-blur-sm rounded-xl shadow-xl border border-gray-700/50 flex flex-col overflow-hidden"
+					>
+						<div
+							class="absolute top-0 left-0 right-0 z-10 p-2 flex justify-end pointer-events-none"
+						>
+							<!-- Visualization Toggles -->
+							<div
+								class="pointer-events-auto bg-gray-800/90 backdrop-blur-md rounded-lg p-2 border border-gray-700/50 flex gap-2"
+							>
+								<button
+									@click="getRenderer().sceneManager.toggleWireframe()"
+									class="p-1.5 rounded hover:bg-gray-700 text-gray-300 hover:text-white transition-colors"
+									title="Toggle Wireframe"
+								>
+									<span class="material-icons text-sm">grid_4x4</span>
+								</button>
+								<button
+									@click="toggleBounds()"
+									class="p-1.5 rounded hover:bg-gray-700 text-gray-300 hover:text-white transition-colors"
+									title="Toggle Bounds"
+								>
+									<span class="material-icons text-sm">aspect_ratio</span>
+								</button>
+								<button
+									@click="toggleShadows()"
+									class="p-1.5 rounded hover:bg-gray-700 text-gray-300 hover:text-white transition-colors"
+									title="Toggle Shadows"
+								>
+									<span class="material-icons text-sm">wb_sunny</span>
+								</button>
+							</div>
+						</div>
+
+						<canvas id="canvas" class="w-full h-full block flex-grow"></canvas>
+
+						<!-- Test running overlay -->
+						<div
+							x-show="isRunning"
+							class="absolute inset-0 bg-gray-900/80 backdrop-blur-sm flex items-center justify-center z-20"
+						>
+							<div
+								class="text-center bg-gray-800/90 backdrop-blur-sm rounded-xl p-8 border border-gray-700/50 shadow-xl max-w-md w-full mx-4"
+							>
+								<div
+									class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-600 border-t-emerald-500"
+								></div>
+								<h3
+									class="mt-6 text-xl font-bold text-white"
+									x-text="`Run ${currentRun} of ${totalRuns}`"
+								></h3>
+								<p
+									class="mt-2 text-gray-300 font-mono text-sm"
+									x-text="statusMessage"
+								></p>
+
+								<!-- Progress bar -->
+								<div
+									class="mt-6 w-full bg-gray-700 rounded-full h-3 overflow-hidden"
+								>
+									<div
+										class="bg-emerald-500 h-full rounded-full transition-all duration-300 ease-out relative"
+										:style="`width: ${progress}%`"
+									>
+										<div
+											class="absolute inset-0 bg-white/20 animate-pulse"
+										></div>
+									</div>
+								</div>
+								<div
+									class="mt-2 flex justify-between text-xs text-gray-400 font-mono"
+								>
+									<span>0%</span>
+									<span x-text="`${Math.round(progress)}%`"></span>
+									<span>100%</span>
+								</div>
+							</div>
+						</div>
+
+						<!-- Real-time FPS display -->
+						<div
+							class="absolute bottom-5 left-5 bg-gray-800/90 backdrop-blur-md rounded-lg p-3 border border-gray-700/50 shadow-lg pointer-events-none"
+						>
+							<div class="grid grid-cols-2 gap-x-6 gap-y-1 text-xs font-mono">
+								<span class="text-gray-400">FPS:</span>
+								<span
+									x-text="currentFps"
+									class="text-emerald-400 font-bold text-right"
+									>0</span
+								>
+
+								<span class="text-gray-400">Blocks:</span>
+								<span
+									x-text="blocksRendered.toLocaleString()"
+									class="text-blue-400 font-bold text-right"
+									>0</span
+								>
+
+								<span class="text-gray-400">Memory:</span>
+								<span
+									x-text="currentMemory"
+									class="text-purple-400 font-bold text-right"
+									>0 MB</span
+								>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Performance Monitor - Full Width Section -->
+		<div class="container mx-auto px-5 py-6 pb-20">
+			<div
+				class="bg-gray-900/95 backdrop-blur-sm rounded-xl shadow-xl border border-gray-700/50 p-6"
+			>
+				<div
+					class="flex items-center justify-between mb-6 pb-4 border-b border-gray-700/60"
+				>
+					<div class="flex items-center">
+						<span class="material-icons text-lg mr-3 text-emerald-500"
+							>analytics</span
+						>
+						<h2 class="m-0 text-gray-100 text-xl font-bold">
+							Performance Analysis
+						</h2>
+					</div>
+					<div
+						class="text-sm text-gray-400 font-mono"
+						x-show="multiRunResults.runs.length > 0"
+					>
+						Last run: <span x-text="new Date().toLocaleTimeString()"></span>
+					</div>
+				</div>
+				<div
+					id="performance-visualizer"
+					class="w-full min-h-[400px] bg-gray-950/50 rounded-lg border border-gray-800"
+				>
+					<!-- Performance charts will be rendered here -->
+					<div
+						x-show="multiRunResults.runs.length === 0"
+						class="h-full flex flex-col items-center justify-center text-gray-500 py-20"
+					>
+						<span class="material-icons text-4xl mb-4 opacity-50"
+							>bar_chart</span
+						>
+						<p>Run a test to see performance data</p>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Alpine.js Script -->
+		<script>
+			function performanceTest() {
+				return {
+					// NOTE: We do NOT store the renderer here to avoid Alpine proxying it.
+					// We access it via window.renderer or helper methods.
+
+					isRunning: false,
+					currentFps: 0,
+					blocksRendered: 0,
+					currentMemory: "0 MB",
+					statusMessage: "Initializing...",
+					progress: 0,
+
+					config: {
+						schematicType: "terrain",
+						schematicSize: "huge",
+						blockDensity: "medium",
+						meshBuildingMode: "batched",
+						greedyMeshing: false,
+						numberOfRuns: 1,
+					},
+
+					results: {
+						totalBlocks: null,
+						memoryUsage: null,
+					},
+
+					multiRunResults: {
+						runs: [],
+						averages: {
+							buildTime: null,
+							memoryUsage: null,
+							peakMemory: null,
+						},
+						statistics: {
+							buildTimeStdDev: null,
+							memoryStdDev: null,
+							minBuildTime: null,
+							maxBuildTime: null,
+							minMemory: null,
+							maxMemory: null,
+						},
+					},
+
+					currentRun: 0,
+					totalRuns: 0,
+					fpsHistory: [],
+					testInterval: null,
+					multiRunVisualizer: null,
+
+					init() {
+						// Wait for the renderer to be initialized
+						document
+							.getElementById("canvas")
+							.addEventListener("rendererInitialized", () => {
+								// We don't need to store it in this data object.
+								// Just verify it exists globally or on DOM
+								console.log("Alpine: Renderer initialized signal received");
+
+								// Start FPS monitoring
+								this.startFpsMonitoring();
+
+								// Initialize MultiRunVisualizer
+								this.initializeVisualizer();
+
+								// Start background monitoring immediately for runtime tracking
+								if (window.performanceMonitor) {
+									window.performanceMonitor.startBackgroundMonitoring();
+								}
+							});
+					},
+
+					getRenderer() {
+						// Safe accessor that returns the raw renderer object
+						return (
+							window.renderer ||
+							document.getElementById("canvas").schematicRenderer
+						);
+					},
+
+					initializeVisualizer() {
+						// Initialize the multi-run visualizer
+						if (window.MultiRunVisualizer) {
+							this.multiRunVisualizer = new window.MultiRunVisualizer(
+								"performance-visualizer"
+							);
+							console.log("MultiRunVisualizer initialized");
+						} else {
+							console.warn("MultiRunVisualizer not available, retrying...");
+							setTimeout(() => this.initializeVisualizer(), 1000);
+						}
+					},
+
+					startFpsMonitoring() {
+						setInterval(() => {
+							if (window.performanceMonitor) {
+								const currentFPS = window.performanceMonitor.getCurrentFPS();
+								if (currentFPS > 0) {
+									this.currentFps = Math.round(currentFPS);
+								}
+							}
+
+							if (performance.memory) {
+								const mb = performance.memory.usedJSHeapSize / 1024 / 1024;
+								this.currentMemory = Math.round(mb) + " MB";
+							}
+						}, 500);
+					},
+
+					toggleBounds() {
+						const renderer = this.getRenderer();
+						if (renderer) {
+							const current =
+								renderer.schematicManager.getAllSchematics()[0]?.renderingBounds
+									?.helper !== undefined;
+							renderer.showRenderingBoundsHelper(
+								renderer.schematicManager.getAllSchematics()[0]?.id,
+								!current
+							);
+						}
+					},
+
+					toggleShadows() {
+						const renderer = this.getRenderer();
+						if (renderer && renderer.renderManager) {
+							const shadows = renderer.renderManager.renderer.shadowMap.enabled;
+							renderer.renderManager.renderer.shadowMap.enabled = !shadows;
+						}
+					},
+
+					toggleGreedyMeshing(enabled) {
+						const renderer = this.getRenderer();
+						if (renderer && renderer.worldMeshBuilder) {
+							renderer.worldMeshBuilder.setGreedyMeshing(enabled);
+							console.log(
+								`[Performance] Greedy meshing ${
+									enabled ? "enabled" : "disabled"
+								}`
+							);
+						}
+					},
+
+					async runPerformanceTest() {
+						if (this.isRunning) return;
+
+						const renderer = this.getRenderer();
+
+						// Validate renderer is ready
+						if (!renderer || !renderer.schematicManager) {
+							alert("Renderer is not fully initialized. Please wait.");
+							return;
+						}
+
+						this.isRunning = true;
+						this.currentRun = 0;
+						this.totalRuns = parseInt(this.config.numberOfRuns);
+						this.multiRunResults.runs = [];
+						this.progress = 0;
+
+						// Stop background monitoring during test execution (handled by sessions)
+						if (window.performanceMonitor) {
+							window.performanceMonitor.stopBackgroundMonitoring();
+						}
+
+						console.log(
+							`🚀 Starting ${this.totalRuns}-run performance test (${this.config.schematicType}, ${this.config.schematicSize})`
+						);
+
+						try {
+							for (let run = 1; run <= this.totalRuns; run++) {
+								this.currentRun = run;
+								this.progress = ((run - 1) / this.totalRuns) * 100;
+								this.statusMessage = `Building mesh...`;
+
+								// Run single test iteration
+								// We call the global function exposed by performance.ts
+								const runResult = await window.runSingleIteration(
+									run,
+									this.config,
+									renderer,
+									(msg, p) => {
+										this.statusMessage = msg;
+										// Map local progress 0-1 to global progress slice
+										const runSlice = 100 / this.totalRuns;
+										this.progress =
+											((run - 1) / this.totalRuns) * 100 + p * runSlice;
+									}
+								);
+
+								this.multiRunResults.runs.push(runResult);
+								this.blocksRendered = runResult.blockCount; // Update block count display
+
+								// Brief pause between runs
+								if (run < this.totalRuns) {
+									this.statusMessage = "Cooling down...";
+									await new Promise((resolve) => setTimeout(resolve, 500));
+								}
+							}
+
+							this.progress = 100;
+							this.statusMessage = "Test Complete";
+
+							// Calculate aggregate statistics
+							// Using the global helper function
+							window.calculateMultiRunStatistics(this.multiRunResults);
+
+							// Update visualizations
+							if (this.multiRunVisualizer) {
+								this.multiRunVisualizer.updateData(this.multiRunResults);
+							}
+						} catch (error) {
+							console.error("❌ Performance test failed:", error);
+							alert("Test failed: " + error.message);
+						} finally {
+							this.isRunning = false;
+							this.currentRun = 0;
+
+							// Restart background monitoring for runtime analysis
+							if (window.performanceMonitor) {
+								window.performanceMonitor.startBackgroundMonitoring();
+							}
+						}
+					},
+
+					clearResults() {
+						this.multiRunResults.runs = [];
+						this.multiRunResults.averages = {
+							buildTime: null,
+							memoryUsage: null,
+							peakMemory: null,
+						};
+						const renderer = this.getRenderer();
+						if (renderer) {
+							renderer.schematicManager.removeAllSchematics();
+						}
+						if (this.multiRunVisualizer) {
+							// Reset visualizer if it has a method, or re-init
+							document.getElementById("performance-visualizer").innerHTML = "";
+							this.initializeVisualizer();
+						}
+						this.blocksRendered = 0;
+					},
+				};
+			}
+		</script>
+	</body>
+</html>

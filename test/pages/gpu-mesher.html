@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>GPU Mesher — oracle validation</title>
+<style>
+  body { font-family: ui-monospace, monospace; background: #09090b; color: #e4e4e7; margin: 2rem; }
+  h1 { color: #34d399; font-size: 1.2rem; }
+  button { background: #059669; color: white; border: 0; padding: 0.5rem 1rem; border-radius: 6px; font-family: inherit; cursor: pointer; margin-right: 0.5rem; }
+  #log { white-space: pre-wrap; background: #18181b; padding: 1rem; border-radius: 8px; margin-top: 1rem; font-size: 0.85rem; line-height: 1.5; }
+  .pass { color: #34d399; font-weight: bold; } .fail { color: #f87171; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>GPU Compute Mesher — oracle validation (hash-for-hash vs CPU pipeline)</h1>
+<div>
+  <button data-b="cubes">cubes_64x48x64</button>
+  <button data-b="stress">stress_64x48x64</button>
+</div>
+<div id="log">checking WebGPU…</div>
+<script type="module">
+const EXPECTED = {
+  cubes:   { solid: ['242282', 'f304740c'], transparent: ['199316', '4d1c71d8'] },
+  stress:  { solid: ['711650', '81b72f68'], transparent: ['205760', '236e9b38'] },
+};
+const log = (s, cls) => { const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = s; document.getElementById('log').appendChild(d); };
+
+if (!navigator.gpu) { log('❌ WebGPU unavailable in this browser — use Chrome/Edge with GPU support', 'fail'); }
+else log('✅ WebGPU present');
+
+const canonHash = (pos, idx, count) => {
+  let h = 0x811c9dc5; const tris = [];
+  for (let t = 0; t + 2 < count; t += 3) {
+    const v = [];
+    for (let k = 0; k < 3; k++) {
+      const vi = idx[t + k];
+      v.push(Math.round(pos[vi * 3] * 1024) + ',' + Math.round(pos[vi * 3 + 1] * 1024) + ',' + Math.round(pos[vi * 3 + 2] * 1024));
+    }
+    v.sort(); tris.push(v.join(';'));
+  }
+  tris.sort();
+  for (const t of tris) for (let c = 0; c < t.length; c++) { h ^= t.charCodeAt(c); h = (h * 0x01000193) >>> 0; }
+  return { tris: tris.length, hash: h.toString(16) };
+};
+
+async function run(which) {
+  log(`\n=== ${which}: loading bundle + shader ===`);
+  const [bundle, shader] = await Promise.all([
+    fetch(`/gpu-mesher/${which}.bundle.json`).then((r) => r.json()),
+    fetch('/gpu-mesher/mesher.wgsl').then((r) => r.text()),
+  ]);
+  const adapter = await navigator.gpu.requestAdapter();
+  const device = await adapter.requestDevice({ requiredLimits: {
+      maxStorageBuffersPerShaderStage: 16, // shader uses 9 storage buffers
+    } });
+  const { sx, sy, sz } = bundle;
+  const nCat = bundle.categories.length;
+
+  const mk = (arr, usage) => {
+    const b = device.createBuffer({ size: (arr.byteLength + 3) & ~3, usage: usage | GPUBufferUsage.COPY_DST });
+    device.queue.writeBuffer(b, 0, arr); return b;
+  };
+  const F32 = (a) => new Float32Array(a), U32 = (a) => new Uint32Array(a);
+  const bufs = {
+    grid: mk(U32(bundle.grid), GPUBufferUsage.STORAGE),
+    dims: mk(U32([sx, sy, sz, 0]), GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST),
+    desc: mk(U32(bundle.desc), GPUBufferUsage.STORAGE),
+    desc2: mk(U32(bundle.desc2), GPUBufferUsage.STORAGE),
+    tplPos: mk(F32(bundle.tplPos), GPUBufferUsage.STORAGE),
+    tplIdx: mk(U32(bundle.tplIdx), GPUBufferUsage.STORAGE),
+    tplCull: mk(U32(bundle.tplTriCull), GPUBufferUsage.STORAGE),
+  };
+  const totalStride = bundle.catIdxStride.reduce((a, b) => a + b, 0);
+  const outPos = device.createBuffer({ size: totalStride * 3 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+  const outIdx = device.createBuffer({ size: totalStride * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+  const counters = device.createBuffer({ size: 16 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+
+  const module = device.createShaderModule({ code: shader });
+  const pipeline = device.createComputePipeline({ layout: 'auto', compute: { module, entryPoint: 'main' } });
+  const bg = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
+    { binding: 0, resource: { buffer: bufs.grid } }, { binding: 1, resource: { buffer: bufs.dims } },
+    { binding: 2, resource: { buffer: bufs.desc } }, { binding: 3, resource: { buffer: bufs.desc2 } },
+    { binding: 4, resource: { buffer: bufs.tplPos } }, { binding: 5, resource: { buffer: bufs.tplIdx } },
+    { binding: 6, resource: { buffer: bufs.tplCull } }, { binding: 7, resource: { buffer: outPos } },
+    { binding: 8, resource: { buffer: outIdx } }, { binding: 9, resource: { buffer: counters } },
+    { binding: 10, resource: { buffer: mk(U32(bundle.catOffsets), GPUBufferUsage.STORAGE) } },
+  ] });
+
+  const t0 = performance.now();
+  const enc = device.createCommandEncoder();
+  const pass = enc.beginComputePass();
+  pass.setPipeline(pipeline); pass.setBindGroup(0, bg);
+  pass.dispatchWorkgroups(Math.ceil(sx / 4), Math.ceil(sy / 4), Math.ceil(sz / 4));
+  pass.end();
+  device.queue.submit([enc.finish()]);
+  await device.queue.onSubmittedWorkDone();
+  const gpuMs = performance.now() - t0;
+  log(`compute+sync: ${gpuMs.toFixed(1)}ms (${sx}x${sy}x${sz} grid)`);
+
+  // read back per category and hash
+  async function readRange(buf, byteOff, len, ctor) {
+    const tmp = device.createBuffer({ size: len * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    const e2 = device.createCommandEncoder(); e2.copyBufferToBuffer(buf, byteOff, tmp, 0, len * 4);
+    device.queue.submit([e2.finish()]); await tmp.mapAsync(GPUMapMode.READ);
+    const out = new ctor(tmp.getMappedRange().slice(0)); tmp.unmap(); tmp.destroy(); return out;
+  }
+  const cnt = await readRange(counters, 0, 16, Uint32Array);
+  let allPass = true;
+  for (let c = 0; c < nCat; c++) {
+    const name = bundle.categories[c];
+    const nIdx = cnt[c * 2 + 1];
+    const region = bundle.catOffsets[c];
+    const posArr = await readRange(outPos, region * 3 * 4, cnt[c * 2] * 3, Float32Array);
+    const idxArr = await readRange(outIdx, region * 4, nIdx, Uint32Array);
+    const r = canonHash(posArr, idxArr, nIdx);
+    const exp = EXPECTED[which][name];
+    const ok = exp && String(r.tris) === exp[0] && r.hash === exp[1];
+    if (!ok) allPass = false;
+    log(`  ${name}: GPU ${r.tris} ${r.hash}  expected ${exp ? exp.join(' ') : '?'} ${ok ? '✓ PASS' : '✗ FAIL'}`, ok ? 'pass' : 'fail');
+  }
+  log(allPass ? `★ ${which}: ORACLE PASS — GPU output hash-identical to CPU pipeline` : `✗ ${which}: mismatch — see above`, allPass ? 'pass' : 'fail');
+}
+
+document.querySelectorAll('button').forEach((b) => b.onclick = () => run(b.dataset.b).catch((e) => log('ERROR: ' + e.message, 'fail')));
+</script>
+</body>
+</html>

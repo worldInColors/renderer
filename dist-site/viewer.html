@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Schematic Viewer</title>
+		<style>
+			:root { color-scheme: dark; --bg: #0f1117; --panel: #171a23cc; --line: #262b38; --text: #d7dbe6; --dim: #7d8598; --accent: #34d399; }
+			* { box-sizing: border-box; }
+			html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.45 system-ui, sans-serif; }
+			#app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+			#viewer { flex: 1; position: relative; min-height: 0; }
+			#viewer canvas { position: absolute; inset: 0; }
+			header {
+				display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+				background: var(--panel); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
+				flex-wrap: wrap;
+			}
+			header h1 { font-size: 13px; margin: 0 6px 0 0; letter-spacing: .04em; color: var(--dim); font-weight: 600; }
+			.btn {
+				background: #1d2230; color: var(--text); border: 1px solid var(--line); border-radius: 7px;
+				padding: 5px 11px; cursor: pointer; font-size: 12px; transition: all .12s;
+			}
+			.btn:hover { border-color: #3b4358; background: #232937; }
+			.btn.active { background: #133a2c; border-color: var(--accent); color: #c8f7e4; }
+			.sep { width: 1px; height: 18px; background: var(--line); }
+			#file { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 32vw; }
+			#urlbar { flex: 1; min-width: 160px; background: #12151d; border: 1px solid var(--line); color: var(--text); border-radius: 7px; padding: 5px 10px; font-size: 12px; outline: none; }
+			#urlbar:focus { border-color: #3b4358; }
+			#status {
+				position: absolute; left: 50%; top: 18px; transform: translateX(-50%);
+				background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+				padding: 6px 14px; font-size: 12px; color: var(--dim); z-index: 4; display: none;
+				backdrop-filter: blur(8px);
+			}
+			#status.error { color: #f87171; border-color: #7f1d1d; }
+			#hint { position: absolute; right: 14px; bottom: 12px; color: #566072; font-size: 11px; z-index: 4; user-select: none; }
+			#drop { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+				background: #0f1117e6; z-index: 6; font-size: 15px; color: var(--accent); border: 2px dashed #2f6b52; }
+	
+			#topbar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 10px; z-index: 950;
+				padding: 10px 14px; background: linear-gradient(#0f1117e0, transparent); }
+			#topbar .brand { font-size: 14px; letter-spacing: .05em; color: #6b7280; }
+			#topbar .brand b { color: #d7dbe6; font-weight: 600; }
+			#file { color: #566072; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 24vw; }
+			.tbtn { background: #1d2230; color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 5px 12px; cursor: pointer; font-size: 12px; }
+			#pill { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; z-index: 950;
+				background: #171a23d9; backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; }
+			.ibtn { display: flex; align-items: center; gap: 5px; background: none; border: 0; color: #8b93a7; cursor: pointer;
+				font-size: 11px; padding: 5px 8px; border-radius: 8px; }
+			.ibtn:hover { background: #232937; color: var(--text); }
+			.ibtn.active { background: #133a2c; color: #34d399; }
+			.ibtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+			.vsep { width: 1px; height: 16px; background: var(--line); margin: 0 4px; }
+			.pop { position: absolute; z-index: 951; bottom: 64px; left: 50%; transform: translateX(-50%); display: none; align-items: center; gap: 10px;
+				background: #171a23d9; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; backdrop-filter: blur(10px); }
+			.pop.open { display: flex; }
+			#layerslider { width: 180px; accent-color: #34d399; }
+			#layerlbl { font-size: 11px; color: var(--dim); min-width: 52px; text-align: right; }
+	</style>
+		<script type="module" crossorigin src="./assets/viewer-92fa216b.js"></script>
+		<link rel="modulepreload" crossorigin href="./assets/SchematicRenderer-ed2eef6a.js">
+	</head>
+		<body>
+		<div id="app">
+			<div id="viewer">
+				<div id="status"></div>
+				<div id="drop">drop schematic to load</div>
+				<div id="topbar">
+					<span class="brand">shulkr<b>viewer</b></span>
+					<input id="urlbar" placeholder="paste schematic URL (.litematic / .schem / .nbt) — or drop a file" spellcheck="false" />
+					<button class="tbtn" id="btn-load">Load</button>
+					<span id="file"></span>
+				</div>
+				<div id="pill">
+					<button class="ibtn" id="btn-gpu" title="WebGPU compute mesher + vertex pulling (fallback: CPU batched)">
+						<svg viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg><span>GPU</span>
+					</button>
+					<button class="ibtn" id="btn-cpu" title="CPU batched mode">
+						<svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg><span>CPU</span>
+					</button>
+					<span class="vsep"></span>
+					<button class="ibtn" id="btn-orbit" title="Orbit camera — drag rotate, wheel zoom">
+						<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="10" ry="4.5"/></svg><span>Orbit</span>
+					</button>
+					<button class="ibtn" id="btn-fps" title="Fly / FPS mouse-look — click canvas to lock pointer, WASD to move">
+						<svg viewBox="0 0 24 24"><path d="M12 2 4 6v6c0 5 3.4 8.8 8 10 4.6-1.2 8-5 8-10V6z"/></svg><span>Fly</span>
+					</button>
+					<span class="vsep"></span>
+					<button class="ibtn" id="btn-grid" title="Toggle grid floor">
+						<svg viewBox="0 0 24 24"><path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+					</button>
+					<button class="ibtn" id="btn-shot" title="Screenshot">
+						<svg viewBox="0 0 24 24"><path d="M4 7h3l2-2h6l2 2h3v12H4zM12 10a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/></svg>
+					</button>
+					<button class="ibtn" id="btn-speed" title="Fly speed">
+						<svg viewBox="0 0 24 24"><path d="M4 17l4-4 3 3 5-5 4 4"/><path d="M4 7h3l2 2"/></svg><span>Speed</span>
+					</button>
+					<button class="ibtn" id="btn-layer" title="Layer mode">
+						<svg viewBox="0 0 24 24"><path d="M12 3 2 8l10 5 10-5zM2 13l10 5 10-5"/></svg><span>All</span>
+					</button>
+				</div>
+				<div id="speedpop" class="pop">
+					<span style="font-size:11px;color:#7d8598">fly speed</span>
+					<input type="range" id="speedslider" min="5" max="160" value="40" />
+					<span id="speedlbl" style="font-size:11px;color:#d7dbe6;min-width:52px;text-align:right">40 u/s</span>
+				</div>
+				<div id="layerpop" class="pop">
+					<button class="ibtn" id="btn-layer-all">All layers</button>
+					<input type="range" id="layerslider" min="0" max="63" value="63" />
+					<span id="layerlbl">63 / 63</span>
+				</div>
+				<div id="hint">drag rotate · wheel zoom · right-drag pan</div>
+			</div>
+		</div>
+		
+	</body>
+</html>

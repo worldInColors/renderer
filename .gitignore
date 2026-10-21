@@ -1,0 +1,43 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.history
+.vscode
+
+
+schematic-renderer-*.tgz
+package-lock.json
+
+# Rust/WASM build artifacts
+mesh_builder_wasm/target/
+mesh_builder_wasm/pkg/
+mesh_builder_wasm/Cargo.lock
+
+
+# Node compile cache
+node-compile-cache/
+
+# Local smoke-test scripts (not part of the package)
+smoke.html
+smoke-server.ts
