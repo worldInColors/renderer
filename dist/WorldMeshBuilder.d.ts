@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { SchematicRenderer } from "./SchematicRenderer";
 import { SchematicObject } from "./managers/SchematicObject";
-import type { ChunkGeometryData } from "./types";
+import type { ProcessedBlockGeometry, ChunkGeometryData } from "./types";
 import { Cubane } from "./cubane";
 export declare const INVISIBLE_BLOCKS: Set<string>;
 export declare class WorldMeshBuilder {
@@ -149,7 +149,7 @@ export declare class WorldMeshBuilder {
     private static readonly IMPLICIT_WATERLOGGED;
     private getBlockCategory;
     private configureMeshForCategory;
-    private extractAllMeshData;
+    extractAllMeshData(rootCubaneObject: THREE.Object3D): ProcessedBlockGeometry[];
     private createFallbackObject3D;
     getPaletteStats(): {
         isReady: boolean;

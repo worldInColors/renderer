@@ -1,4 +1,4 @@
-import { Effect as t, BlendFunction as r } from "./index-7e9c2406.mjs";
+import { Effect as t, BlendFunction as r } from "./index-39bc63bb.mjs";
 import { Uniform as n } from "three";
 class u extends t {
   constructor(o = 2.2) {

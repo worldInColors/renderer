@@ -10,6 +10,29 @@ const extract = (root: THREE.Object3D): Array<{ geometry: THREE.BufferGeometry }
 	(WorldMeshBuilder.prototype as any).extractAllMeshData(root);
 
 describe("palette mesh extraction", () => {
+	it.each([
+		"glass",
+		"white_stained_glass",
+		"blue_stained_glass_pane",
+		"nether_portal",
+		"end_portal",
+	])(
+		"leaves %s to the shared surface pass instead of emitting duplicate GPU/CPU templates",
+		async (name) => {
+			const builder = Object.assign(Object.create(WorldMeshBuilder.prototype), {
+				schematicRenderer: { options: {} },
+				cubane: {
+					getBlockMesh: async () =>
+						new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial()),
+				},
+				initializeWorkers: () => {},
+				workers: [],
+			});
+			await builder.precomputePaletteGeometries([{ name: `minecraft:${name}` }]);
+			expect(builder.paletteCache.paletteGeometryData).toHaveLength(0);
+			expect(builder.paletteCache.blockData[0].materialGroups).toHaveLength(0);
+		}
+	);
 	it("separates a waterlogged host from its fluid in the palette sent to mesh builders", async () => {
 		const host = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial());
 		const waterMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.6 });

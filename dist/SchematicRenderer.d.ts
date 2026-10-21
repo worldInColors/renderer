@@ -123,9 +123,11 @@ export declare class SchematicRenderer {
     updateMissingPackNotice(): void;
     private initializeResourcePacks;
     private lastFrameTime;
+    private lastInputAt;
     private targetFPS;
     private idleFPS;
     private readonly animatedPollFps;
+    private lastSurfaceFrame;
     private enableAnimatedTextures;
     private particleFrustum;
     private particleProjection;

@@ -14,13 +14,28 @@ import { WorldMeshBuilder } from "../WorldMeshBuilder";
 import { EventEmitter } from "events";
 import { SceneManager } from "./SceneManager";
 // Removed unused imports since we're no longer using reactive proxy
-import { resetPerformanceMetrics } from "../monitoring";
 import { SchematicRenderer } from "../SchematicRenderer";
 import type { MeshBuildingMode } from "../SchematicRendererOptions";
 import type { BlockData } from "../types";
 import { performanceMonitor } from "../performance/PerformanceMonitor";
 import { SchematicExporter } from "../export/SchematicExporter";
 import type { ExportOptions, ExportFormat, ExportResult } from "../types/export";
+import {
+	isSurfaceBlock,
+	isGlass,
+	surfaceFaces,
+	makeGlassMaterial,
+	buildGlassMeshes,
+	type SurfaceFace,
+} from "../meshing/ConnectedGlass";
+import {
+	SurfaceIndex,
+	readSurfaceIndex,
+	affectedSurfaceSections,
+	surfaceCellVisible,
+} from "../meshing/SurfaceIndex";
+import { buildEndPortalMesh, makeEndPortalMaterial } from "../meshing/EndPortal";
+import { fluidPaletteStates } from "../meshing/FluidStateLookup";
 
 // Define chunk data interface to fix TypeScript errors
 
@@ -36,6 +51,42 @@ export class SchematicObject extends EventEmitter {
 
 	public get hasAnimatedParticles(): boolean {
 		return this.visible && !!this.bubbleMesh?.visible && this.bubbleMesh.parent === this.group;
+	}
+
+	private surfaceIndex = new SurfaceIndex();
+	private surfaceTemplates = new Map<string, SurfaceFace[]>();
+	private surfaceMaterials = new Map<string, THREE.Material>();
+	private endPortalMaterial?: THREE.ShaderMaterial;
+	private surfaceClip = { value: new THREE.Vector2(0, 1e9) };
+	private animatedSurfaces: THREE.Mesh[] = [];
+	private surfaceViewBox = new THREE.Box3();
+	private editQueue: Promise<void> = Promise.resolve();
+
+	public get hasAnimatedSurfaces(): boolean {
+		return (
+			this.visible &&
+			this.group.visible &&
+			this.animatedSurfaces.some((mesh) => mesh.visible && mesh.parent === this.group)
+		);
+	}
+
+	public hasSurfacesInView(frustum: THREE.Frustum): boolean {
+		if (!this.hasAnimatedSurfaces) return false;
+		this.group.updateWorldMatrix(true, false);
+		for (const mesh of this.animatedSurfaces) {
+			if (!mesh.visible || mesh.parent !== this.group) continue;
+			const material = mesh.material as THREE.ShaderMaterial;
+			if (material.opacity <= 0) continue;
+			const clip = material.uniforms.uLayerClip.value as THREE.Vector2;
+			if (clip.x > 0.5 && mesh.userData.minCellY > clip.y) continue;
+			mesh.updateWorldMatrix(false, false);
+			this.surfaceViewBox.copy(mesh.geometry.boundingBox!);
+			if (clip.x > 0.5)
+				this.surfaceViewBox.max.y = Math.min(this.surfaceViewBox.max.y, Math.floor(clip.y) + 0.25);
+			this.surfaceViewBox.applyMatrix4(mesh.matrixWorld);
+			if (frustum.intersectsBox(this.surfaceViewBox)) return true;
+		}
+		return false;
 	}
 
 	public hasParticlesInView(frustum: THREE.Frustum): boolean {
@@ -498,9 +549,11 @@ export class SchematicObject extends EventEmitter {
 		const schematicWantsFade = this.opacity < 1.0;
 
 		objects.forEach((obj) => {
-			obj.visible = this.visible;
+			const surface = !!obj.userData.surfaceMesh;
+			// Surface sections may be rebuilt while hidden; group visibility owns hiding.
+			obj.visible = surface || this.visible;
 
-			if (this.visible) {
+			if (this.visible || surface) {
 				obj.traverse((child) => {
 					if (child instanceof THREE.Mesh) {
 						child.castShadow = true;
@@ -513,7 +566,14 @@ export class SchematicObject extends EventEmitter {
 							if (mat) {
 								// If the schematic is being faded, apply its opacity.
 								// Otherwise, let the material keep its original opacity.
-								if (schematicWantsFade) {
+								if (surface) {
+									mat.opacity = this.opacity;
+									const transparent = schematicWantsFade || !!mat.userData.surfaceTransparent;
+									if (mat.transparent !== transparent) {
+										mat.transparent = transparent;
+										mat.needsUpdate = true;
+									}
+								} else if (schematicWantsFade) {
 									mat.opacity = this.opacity;
 								}
 								if (mat instanceof THREE.ShaderMaterial && mat.userData.fluidAlpha !== undefined) {
@@ -695,6 +755,7 @@ export class SchematicObject extends EventEmitter {
 		this.updateTransform(); // This will apply position, rotation, and scale to the group
 		this.group.visible = this.visible;
 		this.meshes = meshes as THREE.Mesh[]; // Keep for backward compatibility
+		this.animatedSurfaces = this.meshes.filter((mesh) => mesh.userData.animatedSurface);
 
 		this.group.updateMatrixWorld(true);
 		this.group.updateWorldMatrix(true, true);
@@ -803,6 +864,14 @@ export class SchematicObject extends EventEmitter {
 					throw new Error(
 						`Invalid build mode: ${buildMode}. Use 'immediate', 'incremental', 'instanced', or 'batched'.`
 					);
+			}
+
+			try {
+				result.meshes.push(...(await this.buildTransparentSurfaces(schematicObject)));
+			} catch (error) {
+				// Keep the main mesh usable and discard incomplete caches before a retry.
+				this.disposeSurfaceResources();
+				console.warn("[SchematicObject] transparent surface build failed", error);
 			}
 
 			// Track final memory state and record detailed metrics
@@ -1552,7 +1621,7 @@ export class SchematicObject extends EventEmitter {
 
 		const wmb: any = this.worldMeshBuilder;
 		const paletteData = wmb.paletteCache?.paletteGeometryData;
-		if (!paletteData || !Array.isArray(paletteData) || paletteData.length === 0) {
+		if (!paletteData || !Array.isArray(paletteData)) {
 			console.warn(
 				"[GpuBuild] paletteGeometryData unavailable (stale cache path) — falling back to batched"
 			);
@@ -1955,6 +2024,136 @@ export class SchematicObject extends EventEmitter {
 		return { meshes, chunkMap: new Map() };
 	}
 
+	/** Dispose cached surface resources even when clipping left no attached meshes. */
+	public disposeSurfaceResources(): void {
+		for (const material of this.surfaceMaterials.values()) material.dispose();
+		this.endPortalMaterial?.dispose();
+		this.endPortalMaterial = undefined;
+		this.surfaceMaterials.clear();
+		this.surfaceTemplates.clear();
+		this.animatedSurfaces = [];
+		this.surfaceIndex = new SurfaceIndex();
+	}
+
+	private async prepareSurfaceStates(states: Iterable<string>): Promise<void> {
+		const cubane = this.schematicRenderer.cubane;
+		const loader = cubane.getAssetLoader();
+		for (const state of new Set(states)) {
+			if (state === "minecraft:end_portal") {
+				if (!this.endPortalMaterial) {
+					const [sky, portal] = await Promise.all([
+						loader.getTexture("environment/end_sky"),
+						loader.getTexture("entity/end_portal"),
+					]);
+					this.endPortalMaterial = makeEndPortalMaterial(sky, portal, this.surfaceClip);
+				}
+				continue;
+			}
+			if (!isSurfaceBlock(state) || this.surfaceTemplates.has(state)) continue;
+			const root = await cubane.getBlockMesh(state, "plains", true);
+			if (!root) continue;
+			const parts = this.worldMeshBuilder.extractAllMeshData(root);
+			const faces = surfaceFaces(parts);
+			parts.forEach(({ geometry }) => geometry.dispose());
+			this.surfaceTemplates.set(state, faces);
+			for (const face of faces) {
+				if (!face.texture || this.surfaceMaterials.has(face.texture)) continue;
+				const source = await loader.getMaterial(face.texture, { useAtlas: false });
+				const map = (source as THREE.MeshStandardMaterial).map;
+				if (map)
+					this.surfaceMaterials.set(
+						face.texture,
+						makeGlassMaterial(
+							map,
+							isGlass(state) && !face.texture.endsWith("_top"),
+							this.surfaceClip
+						)
+					);
+			}
+		}
+	}
+
+	private async buildSurfaceSections(keys: Iterable<string>): Promise<THREE.Mesh[]> {
+		const meshes: THREE.Mesh[] = [];
+		let deadline = performance.now() + 8;
+		for (const key of keys) {
+			const cells = this.surfaceIndex.sections.get(key);
+			if (!cells) continue;
+			const built = buildGlassMeshes(
+				this.surfaceIndex.getBlock,
+				cells.values(),
+				this.surfaceTemplates,
+				this.surfaceMaterials
+			);
+			if (this.endPortalMaterial) {
+				const end = buildEndPortalMesh(
+					cells.values(),
+					this.endPortalMaterial,
+					!!this.schematicRenderer.options.enableAnimatedTextures
+				);
+				if (end) built.push(end);
+			}
+			for (const mesh of built) mesh.userData.surfaceSection = key;
+			meshes.push(...built);
+			if (performance.now() >= deadline) {
+				await new Promise<void>((resolve) => setTimeout(resolve, 0));
+				deadline = performance.now() + 8;
+			}
+		}
+		return meshes;
+	}
+
+	private async buildTransparentSurfaces(schematicObject: SchematicObject): Promise<THREE.Mesh[]> {
+		this.disposeSurfaceResources();
+		const states = fluidPaletteStates(this.getPalettes(schematicObject.schematicWrapper).default);
+		this.surfaceIndex = await readSurfaceIndex(schematicObject.schematicWrapper, states, {
+			bounds: schematicObject.renderingBounds,
+			hiddenCells: this.hiddenCells,
+		});
+		const used = new Set<string>();
+		for (const section of this.surfaceIndex.sections.values())
+			for (const cell of section.values()) used.add(cell.state);
+		await this.prepareSurfaceStates(used);
+		return this.buildSurfaceSections(this.surfaceIndex.sections.keys());
+	}
+
+	private async refreshSurfaceCells(positions: THREE.Vector3[]): Promise<void> {
+		const states: string[] = [];
+		for (const { x, y, z } of positions) {
+			const state = surfaceCellVisible(x, y, z, {
+				bounds: this.renderingBounds,
+				hiddenCells: this.hiddenCells,
+			})
+				? this.schematicWrapper.get_block_string(x, y, z) || ""
+				: "";
+			this.surfaceIndex.set(x, y, z, state);
+			states.push(state);
+		}
+		await this.prepareSurfaceStates(states);
+		const sections = affectedSurfaceSections(positions);
+		const replacements = await this.buildSurfaceSections(sections);
+		this.meshes = this.meshes.filter((mesh) => {
+			if (!mesh.userData.surfaceMesh || !sections.has(mesh.userData.surfaceSection)) return true;
+			this.group.remove(mesh);
+			mesh.geometry.dispose(); // Cached materials are shared by unaffected sections.
+			return false;
+		});
+		this.applyPropertiesToObjects(replacements);
+		for (const mesh of replacements) this.group.add(mesh);
+		this.meshes.push(...replacements);
+		this.animatedSurfaces = this.meshes.filter((mesh) => mesh.userData.animatedSurface);
+		this.group.updateMatrixWorld(true);
+		this.schematicRenderer.invalidate();
+	}
+
+	private isSurfaceOnlyState(state: string): boolean {
+		return (
+			!state ||
+			/^(?:minecraft:)?(?:air|cave_air|void_air)$/.test(state) ||
+			(isSurfaceBlock(state) && !state.includes("waterlogged=true"))
+		);
+	}
+
 	/** One shared surface pass for both the GPU-pull and batched CPU paths. */
 	private async buildFluidSurface(schematicObject: SchematicObject): Promise<THREE.Mesh[]> {
 		this.bubbleMesh = null;
@@ -2062,7 +2261,7 @@ export class SchematicObject extends EventEmitter {
 		);
 		const wmb: any = this.worldMeshBuilder;
 		const paletteData = wmb.paletteCache?.paletteGeometryData;
-		if (!paletteData || !Array.isArray(paletteData) || paletteData.length === 0) {
+		if (!paletteData || !Array.isArray(paletteData)) {
 			throw new Error("[GpuBuild] paletteGeometryData unavailable (stale cache path)");
 		}
 		const materials = wmb.paletteCache?.globalMaterials || [];
@@ -2496,7 +2695,7 @@ export class SchematicObject extends EventEmitter {
 							mat.uniforms.uAlpha.value = mat.userData.fluidAlpha * this.opacity;
 							mat.transparent = needsTransparency || mat.userData.kind === "water";
 						} else {
-							mat.transparent = needsTransparency;
+							mat.transparent = needsTransparency || !!mat.userData.surfaceTransparent;
 						}
 					}
 				});
@@ -2512,7 +2711,12 @@ export class SchematicObject extends EventEmitter {
 		this.emitPropertyChanged("visibility", this.visible);
 	}
 
-	public async updateMesh() {
+	public async updateMesh(): Promise<void> {
+		return this.enqueueEdit(() => this.updateMeshNow());
+	}
+
+	private async updateMeshNow() {
+		this.disposeSurfaceResources();
 		// Remove old meshes from the scene
 		this.meshes.forEach((mesh) => {
 			this.group.remove(mesh);
@@ -2531,7 +2735,12 @@ export class SchematicObject extends EventEmitter {
 		}
 	}
 
-	public async rebuildMesh() {
+	public async rebuildMesh(): Promise<void> {
+		return this.enqueueEdit(() => this.rebuildMeshNow());
+	}
+
+	private async rebuildMeshNow() {
+		this.disposeSurfaceResources();
 		performanceMonitor.startOperation(`rebuildMesh-${this.name}`);
 
 		// Show progress bar if enabled in renderer options
@@ -3053,49 +3262,75 @@ export class SchematicObject extends EventEmitter {
 		}
 	}
 
-	public async setBlock(position: THREE.Vector3 | number[], blockType: string) {
-		if (Array.isArray(position)) {
-			position = new THREE.Vector3(position[0], position[1], position[2]);
-		}
-		await this.setBlockNoRebuild(position, blockType);
-
-		await this.rebuildChunkAtPosition(position);
+	private enqueueEdit<T>(operation: () => Promise<T>): Promise<T> {
+		const run = this.editQueue.then(async () => {
+			try {
+				await this.meshesReady;
+			} catch {
+				// Wait for the initial build to settle without blocking recovery operations.
+				// Its original promise still reports the failure to initial-build callers.
+			}
+			return operation();
+		});
+		this.editQueue = run.then(
+			() => {},
+			() => {}
+		);
+		return run;
 	}
 
-	// Optimized batch block setting
-	public async setBlocks(blocks: [THREE.Vector3 | number[], string][]) {
-		const affectedChunks = new Set<string>();
-		let startTime = performance.now();
-		performanceMonitor.startOperation("setBlocks");
-		console.log("Setting blocks");
-		resetPerformanceMetrics();
+	public async setBlock(position: THREE.Vector3 | number[], blockType: string) {
+		return this.setBlocks([[position, blockType]]);
+	}
 
-		// Batch all block updates first
-		for (let [position, blockType] of blocks) {
-			if (Array.isArray(position)) {
-				position = new THREE.Vector3(position[0], position[1], position[2]);
+	public async setBlocks(blocks: [THREE.Vector3 | number[], string][]): Promise<void> {
+		if (!blocks.length) return;
+		const updates = blocks.map(
+			([point, state]) =>
+				[
+					Array.isArray(point)
+						? new THREE.Vector3(...(point as [number, number, number]))
+						: point.clone(),
+					state,
+				] as const
+		);
+		// Serialize edits so async texture preparation cannot apply an older edit last.
+		return this.enqueueEdit(async () => {
+			let surfacesChanged = false,
+				surfaceOnly = true;
+			const positions: THREE.Vector3[] = [];
+			for (const [point, blockType] of updates) {
+				const position = point;
+				const old =
+					this.schematicWrapper.get_block_string(position.x, position.y, position.z) || "";
+				surfacesChanged ||= isSurfaceBlock(old) || isSurfaceBlock(blockType);
+				surfaceOnly &&= this.isSurfaceOnlyState(old) && this.isSurfaceOnlyState(blockType);
+				await this.setBlockNoRebuild(position, blockType);
+				positions.push(position);
 			}
-			await this.setBlockNoRebuild(position, blockType);
-			const chunkCoords = this.getChunkCoordinates(position);
-			affectedChunks.add(`${chunkCoords.x},${chunkCoords.y},${chunkCoords.z}`);
-		}
-		console.log("Blocks set");
-		performanceMonitor.endOperation("setBlocks");
-		console.log("Time to set blocks:", performance.now() - startTime + "ms");
-
-		startTime = performance.now();
-		console.log("Rebuilding chunks");
-
-		// Rebuild all affected chunks in parallel
-		const rebuildPromises: Promise<void>[] = [];
-		for (const chunk of affectedChunks) {
-			const [chunkX, chunkY, chunkZ] = chunk.split(",").map((v) => parseInt(v));
-			rebuildPromises.push(this.rebuildChunk(chunkX, chunkY, chunkZ));
-		}
-
-		// Wait for all chunks to rebuild
-		await Promise.all(rebuildPromises);
-		console.log("Chunks rebuilt in", performance.now() - startTime + "ms");
+			if (surfacesChanged && surfaceOnly) {
+				await this.refreshSurfaceCells(positions);
+				return;
+			}
+			// Opaque or waterlogged transitions also change the main mesher's geometry.
+			// Global batches cannot be replaced with a single incremental chunk safely.
+			const mode = this.schematicRenderer.options.meshBuildingMode || "incremental";
+			if (surfacesChanged || !["immediate", "incremental"].includes(mode)) {
+				await this.rebuildMeshNow();
+				return;
+			}
+			const chunks = new Set(
+				positions.map((p) => {
+					const c = this.getChunkCoordinates(p);
+					return `${c.x},${c.y},${c.z}`;
+				})
+			);
+			for (const key of chunks) {
+				const [x, y, z] = key.split(",").map(Number);
+				await this.rebuildChunk(x, y, z);
+			}
+			this.schematicRenderer.invalidate();
+		});
 	}
 
 	public async copyRegionFromSchematic(
@@ -3176,31 +3411,43 @@ export class SchematicObject extends EventEmitter {
 		}
 	}
 
-	/** Hide one block and rebuild (GPU build mode only — needs the retained grid). */
+	/** Surface-only inspector edits replace their affected sections in every build mode. */
 	public async hideBlockAndRebuild(x: number, y: number, z: number): Promise<boolean> {
-		if (!this.gpuBuilt) return false;
-		this.hiddenCells.add(`${x},${y},${z}`);
-		return this.rebuildAfterEdit();
+		return this.enqueueEdit(async () => {
+			const state = this.schematicWrapper.get_block_string(x, y, z) || "";
+			if (!this.gpuBuilt && !isSurfaceBlock(state)) return false;
+			this.hiddenCells.add(`${x},${y},${z}`);
+			if (isSurfaceBlock(state) && this.isSurfaceOnlyState(state)) {
+				await this.refreshSurfaceCells([new THREE.Vector3(x, y, z)]);
+				return true;
+			}
+			return this.rebuildAfterEdit();
+		});
 	}
 
 	public async unhideAllBlocks(): Promise<boolean> {
-		if (!this.gpuBuilt || this.hiddenCells.size === 0) return false;
-		this.hiddenCells.clear();
-		return this.rebuildAfterEdit();
+		return this.enqueueEdit(async () => {
+			if (!this.hiddenCells.size) return false;
+			const positions = [...this.hiddenCells].map(
+				(key) => new THREE.Vector3(...(key.split(",").map(Number) as [number, number, number]))
+			);
+			const surfaceOnly = positions.every(({ x, y, z }) => {
+				const state = this.schematicWrapper.get_block_string(x, y, z) || "";
+				return isSurfaceBlock(state) && this.isSurfaceOnlyState(state);
+			});
+			this.hiddenCells.clear();
+			if (surfaceOnly) {
+				await this.refreshSurfaceCells(positions);
+				return true;
+			}
+			return this.rebuildAfterEdit();
+		});
 	}
 
 	private async rebuildAfterEdit(): Promise<boolean> {
-		// drop the previous build's meshes (dispose geometry only — materials are shared)
-		const doomed: THREE.Mesh[] = [];
-		this.group.traverse((o: any) => {
-			if (o.isMesh && o.userData?.gpuBuilt) doomed.push(o);
-		});
-		for (const m of doomed) {
-			this.group.remove(m);
-			m.geometry?.dispose?.();
-		}
-		this.gpuBuilt = false; // re-established by the build
-		await this.buildSchematicMeshes(this as unknown as SchematicObject, undefined, "gpu");
+		// Use the normal lifecycle: replace surfaces, fluids and tracked mesh lists too.
+		await this.rebuildMeshNow();
+		this.schematicRenderer.invalidate();
 		return true;
 	}
 

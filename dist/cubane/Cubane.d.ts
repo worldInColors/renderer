@@ -216,7 +216,6 @@ export declare class Cubane {
      * @param useCache Whether to use cached meshes (default: true)
      * @returns Promise<THREE.Object3D> The entity mesh
      */
-    private atlasifyEntityMesh;
     getEntityMesh(entityType: string, useCache?: boolean): Promise<THREE.Object3D>;
     /**
      * Clear all mesh caches

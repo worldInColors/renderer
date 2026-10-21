@@ -435,6 +435,8 @@ export class GpuMeshBuilder {
 		palette: PaletteEntry[],
 		materialLookup: (category: string) => THREE.Material[]
 	): Promise<THREE.Mesh[]> {
+		// A glass/portal-only schematic is rendered entirely by the surface pass.
+		if (palette.length === 0) return [];
 		if (!this.device || !this.pipeline) throw new Error("GpuMeshBuilder not initialized");
 		const device = this.device;
 		const t0 = performance.now();
@@ -940,6 +942,7 @@ export class GpuMeshBuilder {
 		palette: PaletteEntry[],
 		materialLookup: (category: string) => THREE.Material[]
 	): Promise<{ meshes: import("three").Mesh[]; stream: any }> {
+		if (palette.length === 0) return { meshes: [], stream: null };
 		const device = this.device!;
 		const t0 = performance.now();
 		const {

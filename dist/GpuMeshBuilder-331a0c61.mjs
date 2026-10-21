@@ -240,30 +240,30 @@ class qe {
       for (const a of B.geometries)
         u[U] = Math.max(u[U], (a.materialIndex || 0) + 1);
     }
-    const ve = [];
+    const ce = [];
     let we = 0;
     for (let B = 0; B < o.length; B++)
-      ve.push(we), we += u[B];
-    const e = [], z = [], D = [], ce = [], T = [], w = [], ne = [], ge = [], pe = [], ye = /* @__PURE__ */ new Map(), me = [[0, 0, 0, 0]], he = [[0, 0, 0, 0]], be = Math.max(...g.map((B) => B.index)), _e = new Map(g.map((B) => [B.index, B]));
-    for (let B = 1; B <= be; B++) {
+      ce.push(we), we += u[B];
+    const e = [], z = [], D = [], le = [], T = [], w = [], ne = [], pe = [], me = [], ye = /* @__PURE__ */ new Map(), he = [[0, 0, 0, 0]], be = [[0, 0, 0, 0]], Be = Math.max(...g.map((B) => B.index)), _e = new Map(g.map((B) => [B.index, B]));
+    for (let B = 1; B <= Be; B++) {
       const U = _e.get(B);
       if (!U) {
-        me.push([0, 0, 0, 0]), he.push([0, 0, 0, 0]);
+        he.push([0, 0, 0, 0]), be.push([0, 0, 0, 0]);
         continue;
       }
       const a = z.length, K = D.length, P = e.length / 3;
       for (const n of U.geometries) {
-        const X = n.materialIndex || 0, j = e.length / 3, q = z.length, le = D.length, J = n.positions, F = n.normals || [], Q = n.indices;
+        const X = n.materialIndex || 0, j = e.length / 3, q = z.length, fe = D.length, J = n.positions, F = n.normals || [], Q = n.indices;
         for (let r = 0; r < J.length; r++)
           e.push(J[r]);
-        const Be = n.uvs || [];
+        const Ue = n.uvs || [];
         for (let r = 0; r < F.length; r++)
           T.push(F[r]);
-        for (let r = 0; r < Be.length; r++)
-          w.push(Be[r]);
+        for (let r = 0; r < Ue.length; r++)
+          w.push(Ue[r]);
         const Y = n.anim, Ae = J.length / 3;
         for (let r = 0; r < Ae; r++)
-          ne.push(Y ? Y.frames : 0), ge.push(Y ? Y.step : 0), pe.push(Y ? Y.vTop : 0);
+          ne.push(Y ? Y.frames : 0), pe.push(Y ? Y.step : 0), me.push(Y ? Y.vTop : 0);
         for (; T.length < e.length; )
           T.push(0);
         for (; w.length < e.length / 3 * 2; )
@@ -280,11 +280,11 @@ class qe {
               (p === 1 && (Math.abs(S - 1) < W || Math.abs(S - 0.5) < W) || p === -1 && (Math.abs(S) < W || Math.abs(S + 0.5) < W) || x === 1 && (Math.abs(y - 1) < W || Math.abs(y - 0.5) < W) || x === -1 && (Math.abs(y) < W || Math.abs(y + 0.5) < W) || M === 1 && (Math.abs(k - 1) < W || Math.abs(k - 0.5) < W) || M === -1 && (Math.abs(k) < W || Math.abs(k + 0.5) < W)) && (c = ke(p, x, M));
             }
           }
-          D.push(c), ce.push(X);
+          D.push(c), le.push(X);
         }
         const Se = Math.floor(Q.length / 3);
         for (let r = 0; r + 1 < Se; r += 2) {
-          const G = le + r, c = z[q + r * 3], p = z[q + r * 3 + 1], x = z[q + r * 3 + 2], M = z[q + r * 3 + 3], S = z[q + r * 3 + 4], y = z[q + r * 3 + 5], k = [c, p, x].filter((s) => [M, S, y].includes(s));
+          const G = fe + r, c = z[q + r * 3], p = z[q + r * 3 + 1], x = z[q + r * 3 + 2], M = z[q + r * 3 + 3], S = z[q + r * 3 + 4], y = z[q + r * 3 + 5], k = [c, p, x].filter((s) => [M, S, y].includes(s));
           if (k.length !== 2)
             continue;
           const I = [M, S, y].find((s) => !k.includes(s)), Z = [c, p, x].find((s) => !k.includes(s));
@@ -294,30 +294,30 @@ class qe {
           l(R, $, Z, V) && l(t, $, V, I) ? ye.set(G, [$, Z, V, I]) : l(R, V, Z, $) && l(t, V, $, I) && ye.set(G, [V, Z, $, I]);
         }
       }
-      me.push([P, a, K, U.occlusionFlags]), he.push([
+      he.push([P, a, K, U.occlusionFlags]), be.push([
         e.length / 3 - P,
         z.length - a,
         b.get(U.category),
-        ve[b.get(U.category)]
+        ce[b.get(U.category)]
       ]);
     }
     return {
       catNames: o,
       catMatCount: u,
-      slotBase: ve,
+      slotBase: ce,
       nSlots: we,
       tplPos: e,
       tplIdx: z,
       tplCull: D,
-      tplTriMat: ce,
+      tplTriMat: le,
       tplNrm: T,
       tplUv: w,
-      tplPosW: ge,
-      tplNrmW: pe,
+      tplPosW: pe,
+      tplNrmW: me,
       tplUvW: ne,
       quadStart: ye,
-      desc: me.flat(),
-      desc2: he.flat()
+      desc: he.flat(),
+      desc2: be.flat()
     };
   }
   /**
@@ -325,24 +325,26 @@ class qe {
    * (y*sz+z)*sx+x order, 0 = air. Returns BufferGeometry per category with the
    * same {category, positions, indices} shape the batched wasm path produces.
    */
-  async buildMeshes(g, o, b, u, ve, we) {
+  async buildMeshes(g, o, b, u, ce, we) {
     var R;
+    if (ce.length === 0)
+      return [];
     if (!this.device || !this.pipeline)
       throw new Error("GpuMeshBuilder not initialized");
     const e = this.device, z = performance.now(), {
       catNames: D,
-      catMatCount: ce,
+      catMatCount: le,
       slotBase: T,
       nSlots: w,
       tplPos: ne,
-      tplIdx: ge,
-      tplCull: pe,
+      tplIdx: pe,
+      tplCull: me,
       tplTriMat: ye,
-      tplNrm: me,
-      tplUv: he,
-      desc: be,
+      tplNrm: he,
+      tplUv: be,
+      desc: Be,
       desc2: _e
-    } = this.buildTemplateBuffers(ve), B = D.length, U = (t, s) => {
+    } = this.buildTemplateBuffers(ce), B = D.length, U = (t, s) => {
       const m = e.createBuffer({
         size: t.byteLength + 3 & -4,
         usage: s | GPUBufferUsage.COPY_DST
@@ -350,14 +352,14 @@ class qe {
       return e.queue.writeBuffer(m, 0, t.buffer, t.byteOffset, t.byteLength), m;
     }, a = {
       grid: U(g, GPUBufferUsage.STORAGE),
-      desc: U(new Uint32Array(be), GPUBufferUsage.STORAGE),
+      desc: U(new Uint32Array(Be), GPUBufferUsage.STORAGE),
       desc2: U(new Uint32Array(_e), GPUBufferUsage.STORAGE),
       tp: U(new Float32Array(ne), GPUBufferUsage.STORAGE),
-      ti: U(new Uint32Array(ge), GPUBufferUsage.STORAGE),
-      tc: U(new Uint32Array(pe), GPUBufferUsage.STORAGE),
+      ti: U(new Uint32Array(pe), GPUBufferUsage.STORAGE),
+      tc: U(new Uint32Array(me), GPUBufferUsage.STORAGE),
       tm: U(new Uint32Array(ye), GPUBufferUsage.STORAGE),
-      tn: U(new Float32Array(me), GPUBufferUsage.STORAGE),
-      tu: U(new Float32Array(he), GPUBufferUsage.STORAGE),
+      tn: U(new Float32Array(he), GPUBufferUsage.STORAGE),
+      tu: U(new Float32Array(be), GPUBufferUsage.STORAGE),
       co: U(new Uint32Array(2 * w), GPUBufferUsage.STORAGE)
     }, K = U(
       new Uint32Array([o, b, u, 0, w, 0, 0, 0]),
@@ -394,13 +396,13 @@ class qe {
         { binding: 15, resource: { buffer: m } },
         { binding: 16, resource: { buffer: i } }
       ]
-    }), le = Math.ceil(o / 4), J = Math.ceil(u / 4), F = e.createBuffer({
+    }), fe = Math.ceil(o / 4), J = Math.ceil(u / 4), F = e.createBuffer({
       size: 16,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     }), Q = e.createBuffer({
       size: 16,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-    }), Be = e.createBuffer({
+    }), Ue = e.createBuffer({
       size: 16,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     }), Y = e.createBuffer({
@@ -415,7 +417,7 @@ class qe {
     }), r = () => [
       F,
       Q,
-      Be,
+      Ue,
       Y,
       Ae,
       Se,
@@ -440,11 +442,11 @@ class qe {
         q(
           i ? i[0] : F,
           i ? i[1] : Q,
-          i ? i[2] : Be,
+          i ? i[2] : Ue,
           i ? i[3] : Y,
           i ? i[4] : Ae
         )
-      ), f.dispatchWorkgroups(le, Math.ceil(m / 4), J), f.end(), e.queue.submit([h.finish()]), await e.queue.onSubmittedWorkDone();
+      ), f.dispatchWorkgroups(fe, Math.ceil(m / 4), J), f.end(), e.queue.submit([h.finish()]), await e.queue.onSubmittedWorkDone();
     }, c = () => e.queue.writeBuffer(n, 0, new Uint32Array(w * 2));
     c(), await G(0, 0, b, null);
     const p = await j(), x = performance.now() - z;
@@ -481,7 +483,7 @@ class qe {
         if (e.queue.writeBuffer(a.co, 0, new Uint32Array([...i, ...h])), c(), l && window.__gpuOracle && (window.__gpuDebug = {
           nSlots: w,
           slotBase: T,
-          catMatCount: ce,
+          catMatCount: le,
           counts: Array.from(p),
           segV: i,
           segI: h
@@ -492,26 +494,26 @@ class qe {
         const ee = e.createBuffer({
           size: f * 3 * 4,
           usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
-        }), Ue = e.createBuffer({
+        }), ve = e.createBuffer({
           size: E * 4,
           usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
-        }), fe = e.createBuffer({
+        }), de = e.createBuffer({
           size: f * 3 * 4,
           usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
         }), H = e.createBuffer({
           size: f * 2 * 4,
           usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
         }), Re = performance.now();
-        await G(1, t, s, [ee, Ue, fe, H, Se]), V += performance.now() - Re;
+        await G(1, t, s, [ee, ve, de, H, Se]), V += performance.now() - Re;
         const Pe = await j();
         for (let A = 0; A < B; A++) {
           const d = D[A];
           let O = 0, te = 0;
-          for (let v = 0; v < ce[A]; v++)
+          for (let v = 0; v < le[A]; v++)
             O += Pe[(T[A] + v) * 2 + 1], te += Pe[(T[A] + v) * 2];
           if (O === 0)
             continue;
-          const oe = i[T[A]], ae = h[T[A]], L = await $(ee, oe * 3 * 4, te * 3, Float32Array), _ = await $(Ue, ae * 4, O, Uint32Array), N = await $(fe, oe * 3 * 4, te * 3, Float32Array), xe = await $(H, oe * 2 * 4, te * 2, Float32Array), C = new se.BufferGeometry();
+          const oe = i[T[A]], ae = h[T[A]], L = await $(ee, oe * 3 * 4, te * 3, Float32Array), _ = await $(ve, ae * 4, O, Uint32Array), N = await $(de, oe * 3 * 4, te * 3, Float32Array), xe = await $(H, oe * 2 * 4, te * 2, Float32Array), C = new se.BufferGeometry();
           C.setAttribute("position", new se.BufferAttribute(L, 3)), C.setAttribute("normal", new se.BufferAttribute(N, 3)), C.setAttribute("uv", new se.BufferAttribute(xe, 2)), C.setIndex(
             O > 65535 ? new se.BufferAttribute(_, 1) : new se.BufferAttribute(Uint16Array.from(_), 1)
           );
@@ -525,9 +527,9 @@ class qe {
               v.array = null;
             });
           const Fe = we(d);
-          for (let v = 0; v < ce[A]; v++) {
-            const de = Pe[(T[A] + v) * 2 + 1];
-            de > 0 && C.addGroup(h[T[A] + v] - ae, de, v);
+          for (let v = 0; v < le[A]; v++) {
+            const ge = Pe[(T[A] + v) * 2 + 1];
+            ge > 0 && C.addGroup(h[T[A] + v] - ae, ge, v);
           }
           C.boundingBox = new se.Box3(
             new se.Vector3(-0.51, t - 0.51, -0.51),
@@ -546,7 +548,7 @@ class qe {
           try {
             const v = window;
             if (v.__meshHashes = v.__meshHashes || [], v.__gpuOracle) {
-              let de = 2166136261;
+              let ge = 2166136261;
               const Me = [];
               for (let ue = 0; ue + 2 < O; ue += 3) {
                 const re = [];
@@ -561,18 +563,18 @@ class qe {
               Me.sort();
               for (const ue of Me)
                 for (let re = 0; re < ue.length; re++)
-                  de ^= ue.charCodeAt(re), de = de * 16777619 >>> 0;
-              v.__meshHashes.push({ category: d, tris: Me.length, hash: de.toString(16) });
+                  ge ^= ue.charCodeAt(re), ge = ge * 16777619 >>> 0;
+              v.__meshHashes.push({ category: d, tris: Me.length, hash: ge.toString(16) });
             }
           } catch {
           }
         }
-        [ee, Ue, fe, H].forEach((A) => A.destroy()), l = !1;
+        [ee, ve, de, H].forEach((A) => A.destroy()), l = !1;
       }
       if (window.__gpuRecords) {
-        const t = performance.now(), s = _e.length / 4 - 1, m = new Uint32Array(pe.length);
+        const t = performance.now(), s = _e.length / 4 - 1, m = new Uint32Array(me.length);
         for (let d = 1; d <= s; d++) {
-          const O = be[d * 4 + 2];
+          const O = Be[d * 4 + 2];
           for (let te = 0; te < _e[d * 4 + 1] / 3; te++)
             m[O + te] = d;
         }
@@ -590,16 +592,16 @@ class qe {
           size: Math.max(f, 1) * 8,
           usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
         });
-        await G(3, 0, b, [F, Q, Be, Y, E]);
-        const ee = await j(), Ue = performance.now() - t, fe = /* @__PURE__ */ new Map();
+        await G(3, 0, b, [F, Q, Ue, Y, E]);
+        const ee = await j(), ve = performance.now() - t, de = /* @__PURE__ */ new Map();
         for (const d of window.__meshHashes ?? []) {
-          const O = fe.get(d.category) ?? [];
-          O.push(d), fe.set(d.category, O);
+          const O = de.get(d.category) ?? [];
+          O.push(d), de.set(d.category, O);
         }
         let H = !0, Re = 0, Pe = 0;
         for (let d = 0; d < B; d++) {
           let O = 0;
-          for (let _ = 0; _ < ce[d]; _++)
+          for (let _ = 0; _ < le[d]; _++)
             O += ee[(T[d] + _) * 2 + 1];
           if (O === 0)
             continue;
@@ -608,9 +610,9 @@ class qe {
           let oe = 2166136261;
           const ae = [];
           for (let _ = 0; _ < O; _++) {
-            const N = te[_ * 2], xe = te[_ * 2 + 1], C = N % o, Fe = N / (o * u) | 0, Ce = (N / o | 0) % u, v = m[xe], de = xe - be[v * 4 + 2], Me = be[v * 4 + 1], ue = [];
+            const N = te[_ * 2], xe = te[_ * 2 + 1], C = N % o, Fe = N / (o * u) | 0, Ce = (N / o | 0) % u, v = m[xe], ge = xe - Be[v * 4 + 2], Me = Be[v * 4 + 1], ue = [];
             for (let re = 0; re < 3; re++) {
-              const Ge = ge[Me + de * 3 + re];
+              const Ge = pe[Me + ge * 3 + re];
               ue.push(
                 Math.round(Math.fround(C + ne[Ge * 3]) * 1024) + "," + Math.round(Math.fround(Fe + ne[Ge * 3 + 1]) * 1024) + "," + Math.round(Math.fround(Ce + ne[Ge * 3 + 2]) * 1024)
               );
@@ -621,7 +623,7 @@ class qe {
           for (const _ of ae)
             for (let N = 0; N < _.length; N++)
               oe ^= _.charCodeAt(N), oe = oe * 16777619 >>> 0;
-          const L = fe.get(D[d]) ?? [];
+          const L = de.get(D[d]) ?? [];
           if (L.length === 1) {
             const _ = L[0].tris === ae.length && L[0].hash === (oe >>> 0).toString(16);
             _ || (H = !1), console.log(
@@ -637,7 +639,7 @@ class qe {
         E.destroy();
         const A = Re === Math.round(S / 3);
         A || (H = !1), console.log(
-          `[GpuMeshBuilder][records] ${H ? "★ ALL MATCH" : "✗ FAILED"} — ${Re.toLocaleString()} tris as ${(Pe / 1048576).toFixed(1)} MB of records (${Ue.toFixed(0)}ms count+emit+verify; count-pass total ${A ? "exact" : "DIFFERS"})`
+          `[GpuMeshBuilder][records] ${H ? "★ ALL MATCH" : "✗ FAILED"} — ${Re.toLocaleString()} tris as ${(Pe / 1048576).toFixed(1)} MB of records (${ve.toFixed(0)}ms count+emit+verify; count-pass total ${A ? "exact" : "DIFFERS"})`
         );
       }
     } finally {
@@ -653,26 +655,28 @@ class qe {
    * Returns one pulling mesh per non-empty category plus the record stream for
    * verification. Falls back to plain buildMeshes on any WebGPU failure upstream.
    */
-  async buildRecordMeshes(g, o, b, u, ve, we) {
+  async buildRecordMeshes(g, o, b, u, ce, we) {
     var G;
+    if (ce.length === 0)
+      return { meshes: [], stream: null };
     const e = this.device, z = performance.now(), {
       catNames: D,
-      catMatCount: ce,
+      catMatCount: le,
       slotBase: T,
       nSlots: w,
       tplPos: ne,
-      tplIdx: ge,
-      tplCull: pe,
+      tplIdx: pe,
+      tplCull: me,
       tplTriMat: ye,
-      tplNrm: me,
-      tplUv: he,
-      tplPosW: be,
+      tplNrm: he,
+      tplUv: be,
+      tplPosW: Be,
       tplNrmW: _e,
       tplUvW: B,
       quadStart: U,
       desc: a,
       desc2: K
-    } = this.buildTemplateBuffers(ve), P = (c, p) => {
+    } = this.buildTemplateBuffers(ce), P = (c, p) => {
       const x = e.createBuffer({
         size: c.byteLength + 3 & -4,
         usage: p | GPUBufferUsage.COPY_DST
@@ -683,11 +687,11 @@ class qe {
       desc: P(new Uint32Array(a), GPUBufferUsage.STORAGE),
       desc2: P(new Uint32Array(K), GPUBufferUsage.STORAGE),
       tp: P(new Float32Array(ne), GPUBufferUsage.STORAGE),
-      ti: P(new Uint32Array(ge), GPUBufferUsage.STORAGE),
-      tc: P(new Uint32Array(pe), GPUBufferUsage.STORAGE),
+      ti: P(new Uint32Array(pe), GPUBufferUsage.STORAGE),
+      tc: P(new Uint32Array(me), GPUBufferUsage.STORAGE),
       tm: P(new Uint32Array(ye), GPUBufferUsage.STORAGE),
-      tn: P(new Float32Array(me), GPUBufferUsage.STORAGE),
-      tu: P(new Float32Array(he), GPUBufferUsage.STORAGE),
+      tn: P(new Float32Array(he), GPUBufferUsage.STORAGE),
+      tu: P(new Float32Array(be), GPUBufferUsage.STORAGE),
       co: P(new Uint32Array(2 * w), GPUBufferUsage.STORAGE)
     }, X = P(
       new Uint32Array([o, b, u, 0, w, 0, 0, 0]),
@@ -695,14 +699,14 @@ class qe {
     ), j = Math.max(64, w * 2) * 4, q = e.createBuffer({
       size: j,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
-    }), le = e.createBuffer({
+    }), fe = e.createBuffer({
       size: j,
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
     }), J = async () => {
       const c = e.createCommandEncoder();
-      c.copyBufferToBuffer(q, 0, le, 0, j), e.queue.submit([c.finish()]), await le.mapAsync(GPUMapMode.READ);
-      const p = new Uint32Array(le.getMappedRange().slice(0));
-      return le.unmap(), p;
+      c.copyBufferToBuffer(q, 0, fe, 0, j), e.queue.submit([c.finish()]), await fe.mapAsync(GPUMapMode.READ);
+      const p = new Uint32Array(fe.getMappedRange().slice(0));
+      return fe.unmap(), p;
     }, F = Array.from(
       { length: 5 },
       () => e.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST })
@@ -727,10 +731,10 @@ class qe {
         { binding: 15, resource: { buffer: F[2] } },
         { binding: 16, resource: { buffer: F[3] } }
       ]
-    }), Be = Math.ceil(o / 4), Y = Math.ceil(u / 4), Ae = async (c, p, x, M) => {
+    }), Ue = Math.ceil(o / 4), Y = Math.ceil(u / 4), Ae = async (c, p, x, M) => {
       e.queue.writeBuffer(X, 0, new Uint32Array([o, b, u, c, w, x, M, 0]));
       const S = e.createCommandEncoder(), y = S.beginComputePass();
-      y.setPipeline(this.pipeline), y.setBindGroup(0, Q(p)), y.dispatchWorkgroups(Be, Math.ceil(M / 4), Y), y.end(), e.queue.submit([S.finish()]), await e.queue.onSubmittedWorkDone();
+      y.setPipeline(this.pipeline), y.setBindGroup(0, Q(p)), y.dispatchWorkgroups(Ue, Math.ceil(M / 4), Y), y.end(), e.queue.submit([S.finish()]), await e.queue.onSubmittedWorkDone();
     }, Se = () => e.queue.writeBuffer(q, 0, new Uint32Array(w * 2)), r = F[4];
     try {
       const p = [];
@@ -756,32 +760,32 @@ class qe {
         const h = await J();
         for (let f = 0; f < D.length; f++) {
           let E = 0;
-          for (let H = 0; H < ce[f]; H++)
+          for (let H = 0; H < le[f]; H++)
             E += h[(T[f] + H) * 2 + 1];
           if (E === 0)
             continue;
           const ee = e.createBuffer({
             size: E * 8,
             usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
-          }), Ue = e.createCommandEncoder();
-          Ue.copyBufferToBuffer(i, s[T[f]] * 8, ee, 0, E * 8), e.queue.submit([Ue.finish()]), await ee.mapAsync(GPUMapMode.READ);
-          const fe = new Uint32Array(ee.getMappedRange().slice(0));
-          ee.unmap(), ee.destroy(), p.push({ category: D[f], records: fe, tris: E, y0: l, h: R });
+          }), ve = e.createCommandEncoder();
+          ve.copyBufferToBuffer(i, s[T[f]] * 8, ee, 0, E * 8), e.queue.submit([ve.finish()]), await ee.mapAsync(GPUMapMode.READ);
+          const de = new Uint32Array(ee.getMappedRange().slice(0));
+          ee.unmap(), ee.destroy(), p.push({ category: D[f], records: de, tris: E, y0: l, h: R });
         }
         i.destroy();
       }
       const { buildRecordTables: x, makeRecordMeshes: M } = await import("./RecordRenderer-bfa6189f.mjs"), S = x(
         ne,
-        me,
         he,
-        ge,
+        be,
+        pe,
         a,
         K,
         K.length / 4 - 1,
-        be,
+        Be,
         _e,
         B
-      ), y = we(D[0] ?? "solid"), k = ((G = y == null ? void 0 : y[0]) == null ? void 0 : G.map) ?? null, I = K.length / 4 - 1, Z = new Uint32Array(pe.length);
+      ), y = we(D[0] ?? "solid"), k = ((G = y == null ? void 0 : y[0]) == null ? void 0 : G.map) ?? null, I = K.length / 4 - 1, Z = new Uint32Array(me.length);
       for (let l = 1; l <= I; l++)
         for (let R = 0; R < K[l * 4 + 1] / 3; R++)
           Z[a[l * 4 + 2] + R] = l;
@@ -807,7 +811,7 @@ class qe {
         n.co,
         X,
         q,
-        le
+        fe
       ].forEach((c) => c.destroy());
     }
   }
