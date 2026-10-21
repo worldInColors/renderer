@@ -31,6 +31,11 @@ export class AssetLoader {
 		new Map();
 
 	// Cache management
+	// Bump when ANY code change alters atlas OUTPUT (tints, UV conventions,
+	// layout rules, liquid frame harvests) — the pack hash alone can't see code
+	// generations, so stale atlases served across upgrades (the "yellow water"
+	// class of bug: new code sampling an old-layout cache)
+	private static readonly ATLAS_FORMAT_VERSION = 2;
 	private resourcePackHash: string = "";
 	private cacheEnabled: boolean = true;
 
@@ -1172,7 +1177,10 @@ export class AssetLoader {
 
 			// Try cache with empty texture array first (just to check cache)
 			try {
-				const cacheResult = await atlasBuilder.buildAtlas([], this.resourcePackHash);
+				const cacheResult = await atlasBuilder.buildAtlas(
+					[],
+					`${this.resourcePackHash}:fmt${AssetLoader.ATLAS_FORMAT_VERSION}`
+				);
 				if (cacheResult.fromCache) {
 					console.log(
 						`🎯 Atlas loaded from cache with ${cacheResult.packingEfficiency.toFixed(
@@ -1454,7 +1462,10 @@ export class AssetLoader {
 		// chests+dust). A cold atlas build is ~2s once per session — cheap for coherence.
 		const cacheKey: string | undefined = undefined;
 
-		const { atlas, uvMap, packingEfficiency } = await atlasBuilder.buildAtlas(textures, cacheKey);
+		const { atlas, uvMap, packingEfficiency } = await atlasBuilder.buildAtlas(
+			textures,
+			`${cacheKey}:fmt${AssetLoader.ATLAS_FORMAT_VERSION}`
+		);
 
 		console.log(`✅ Atlas built with ${packingEfficiency.toFixed(1)}% efficiency`);
 		console.log(`📊 Packed ${uvMap.size} textures into ${atlas.width}x${atlas.height} atlas`);
