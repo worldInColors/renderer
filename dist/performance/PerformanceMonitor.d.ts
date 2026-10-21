@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { MeshBuildingMode } from "../SchematicRendererOptions";
 export interface MemorySnapshot {
     timestamp: number;
     jsHeapSize: number;
@@ -91,7 +92,7 @@ export interface MeshBuildingSession {
     startTime: number;
     endTime?: number;
     totalDuration?: number;
-    renderMode: "immediate" | "incremental" | "instanced";
+    renderMode: MeshBuildingMode;
     memorySnapshots: MemorySnapshot[];
     peakMemoryUsage: number;
     memoryLeaks: number;
@@ -140,7 +141,7 @@ export declare class PerformanceMonitor {
     private constructor();
     static getInstance(): PerformanceMonitor;
     setRenderer(renderer: THREE.WebGLRenderer): void;
-    startSession(schematicId: string, renderMode: "immediate" | "incremental" | "instanced" | "batched"): string;
+    startSession(schematicId: string, renderMode: MeshBuildingMode): string;
     endSession(sessionId?: string): MeshBuildingSession | null;
     startBackgroundMonitoring(): void;
     stopBackgroundMonitoring(): void;

@@ -33,7 +33,7 @@ export { ResourcePackPanel } from "./ui/panels/ResourcePackPanel";
 export { PerformancePanel } from "./ui/panels/PerformancePanel";
 export { SchematicExporter } from "./export/SchematicExporter";
 export type { SimulationConfig, SimulationState, SyncMode } from "./managers/SimulationManager";
-export type { SchematicRendererOptions, KeyboardControlsOptions, DebugOptions, GPUComputeOptions, WasmMeshBuilderOptions, } from "./SchematicRendererOptions";
+export type { SchematicRendererOptions, MeshBuildingMode, KeyboardControlsOptions, DebugOptions, GPUComputeOptions, WasmMeshBuilderOptions, } from "./SchematicRendererOptions";
 export type { InsignRegionStyle, InsignRegionOptions, } from "./managers/highlight/InsignRegionHighlight";
 export type { InsignRegionFilter } from "./managers/InsignManager";
 export type { InsignIoRegion, InsignIoFilter } from "./managers/InsignIoManager";

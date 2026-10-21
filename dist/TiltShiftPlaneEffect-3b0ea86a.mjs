@@ -1,7 +1,7 @@
 var d = Object.defineProperty;
 var m = (n, o, e) => o in n ? d(n, o, { enumerable: !0, configurable: !0, writable: !0, value: e }) : n[o] = e;
 var l = (n, o, e) => (m(n, typeof o != "symbol" ? o + "" : o, e), e);
-import { Effect as v, EffectAttribute as f } from "./index-7e9c2406.mjs";
+import { Effect as v, EffectAttribute as f } from "./index-39bc63bb.mjs";
 import { Uniform as i, Matrix4 as g, Vector3 as s } from "three";
 const w = `
 uniform mat4 invViewProjection;

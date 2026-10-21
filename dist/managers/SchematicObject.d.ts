@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { SchematicWrapper, DefinitionRegionWrapper, SortStrategyWrapper } from "../nucleationExports";
 import { EventEmitter } from "events";
 import { SchematicRenderer } from "../SchematicRenderer";
+import type { MeshBuildingMode } from "../SchematicRendererOptions";
 import type { BlockData } from "../types";
 import type { ExportOptions, ExportResult } from "../types/export";
 import { EditableRegionHighlight } from "./highlight/EditableRegionHighlight";
@@ -12,6 +13,16 @@ export declare class SchematicObject extends EventEmitter {
     private meshes;
     private bubbleMesh;
     get hasAnimatedParticles(): boolean;
+    private surfaceIndex;
+    private surfaceTemplates;
+    private surfaceMaterials;
+    private endPortalMaterial?;
+    private surfaceClip;
+    private animatedSurfaces;
+    private surfaceViewBox;
+    private editQueue;
+    get hasAnimatedSurfaces(): boolean;
+    hasSurfacesInView(frustum: THREE.Frustum): boolean;
     hasParticlesInView(frustum: THREE.Frustum): boolean;
     private worldMeshBuilder;
     private eventEmitter;
@@ -131,7 +142,7 @@ export declare class SchematicObject extends EventEmitter {
     }): Promise<void>;
     private buildMeshes;
     private reportBuildProgress;
-    buildSchematicMeshes(schematicObject: SchematicObject, chunkDimensions?: any, buildMode?: "immediate" | "incremental" | "instanced" | "batched"): Promise<{
+    buildSchematicMeshes(schematicObject: SchematicObject, chunkDimensions?: any, buildMode?: MeshBuildingMode): Promise<{
         meshes: any[];
         chunkMap: Map<string, any[]>;
     }>;
@@ -189,11 +200,17 @@ export declare class SchematicObject extends EventEmitter {
      * record stream and renders it directly via WebGL2 vertex pulling (gl_VertexID) —
      * zero vertex-data readback. ~10x less data than the vertex path.
      */
-    private pendingLiquidTex;
     buildSchematicMeshesGpuPull(schematicObject: any): Promise<{
         meshes: any[];
         chunkMap: Map<string, any[]>;
     }>;
+    /** Dispose cached surface resources even when clipping left no attached meshes. */
+    disposeSurfaceResources(): void;
+    private prepareSurfaceStates;
+    private buildSurfaceSections;
+    private buildTransparentSurfaces;
+    private refreshSurfaceCells;
+    private isSurfaceOnlyState;
     /** One shared surface pass for both the GPU-pull and batched CPU paths. */
     private buildFluidSurface;
     /** Shared front half of the GPU build paths: palette precompute + grid extraction. */
@@ -238,7 +255,9 @@ export declare class SchematicObject extends EventEmitter {
     private updateMeshMaterials;
     private updateMeshVisibility;
     updateMesh(): Promise<void>;
+    private updateMeshNow;
     rebuildMesh(): Promise<void>;
+    private rebuildMeshNow;
     getSchematicWrapper(): SchematicWrapper;
     getRegions(): EditableRegionHighlight[];
     getRegion(name: string): EditableRegionHighlight | undefined;
@@ -365,6 +384,7 @@ export declare class SchematicObject extends EventEmitter {
      * @returns Raw Insign data (DslMap) or null if compilation fails
      */
     compileInsign(): any;
+    private enqueueEdit;
     setBlock(position: THREE.Vector3 | number[], blockType: string): Promise<void>;
     setBlocks(blocks: [THREE.Vector3 | number[], string][]): Promise<void>;
     copyRegionFromSchematic(sourceSchematicName: string, sourceMin?: THREE.Vector3 | number[], sourceMax?: THREE.Vector3 | number[], targetPosition?: THREE.Vector3 | number[], excludeBlocks?: string[], rebuild?: boolean): Promise<void>;
@@ -374,7 +394,7 @@ export declare class SchematicObject extends EventEmitter {
     /** Schematic-space cells hidden via the inspector ("x,y,z"); applied on GPU rebuilds */
     hiddenCells: Set<string>;
     private applyHiddenCells;
-    /** Hide one block and rebuild (GPU build mode only — needs the retained grid). */
+    /** Surface-only inspector edits replace their affected sections in every build mode. */
     hideBlockAndRebuild(x: number, y: number, z: number): Promise<boolean>;
     unhideAllBlocks(): Promise<boolean>;
     private rebuildAfterEdit;
