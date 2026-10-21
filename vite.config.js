@@ -55,7 +55,7 @@ export default defineConfig({
   },
   plugins: [
     wasmInlinePlugin(),
-    topLevelAwait(),
+    // topLevelAwait(), // TEMP: plugin crashes lib build (missing field `type`) — testing without
     wasm(),
   ],
   define: {
