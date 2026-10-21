@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { initializeResourcePacks } from "./initializeResourcePacks";
 import type { Cubane } from "../cubane/Cubane";
 import type { ResourcePackManager } from "../managers/ResourcePackManager";
 
 function fixture(restored: string[] = [], enabled = ["tweaks", "vanilla"], count = enabled.length) {
-	const desired = enabled.map((hash) => ({ hash, blob: new Blob([hash]) }));
+	const desired = enabled.map((hash) => ({ hash, name: hash, blob: new Blob([hash]) }));
 	const cubane = {
 		ready: vi.fn().mockResolvedValue(undefined),
 		getEnabledPacks: vi.fn(() => restored.map((hash) => ({ hash }))),
@@ -24,7 +24,30 @@ function fixture(restored: string[] = [], enabled = ["tweaks", "vanilla"], count
 	return { cubane, manager, desired, run };
 }
 
+afterEach(() => vi.restoreAllMocks());
+
 describe("resource pack startup", () => {
+	it.each([0, 1, 2])(
+		"continues loading after pack %i fails and finishes the batch",
+		async (failed) => {
+			const { cubane, desired, run } = fixture([], ["overlay", "custom", "vanilla"]);
+			const error = new Error("Invalid persisted resource pack");
+			const log = vi.spyOn(console, "error").mockImplementation(() => {});
+			let attempt = 0;
+			cubane.loadResourcePack.mockImplementation(async () => {
+				if (attempt++ === failed) throw error;
+			});
+			await expect(run()).resolves.toEqual(desired.map((pack) => pack.blob).reverse());
+			expect(cubane.loadResourcePack.mock.calls).toEqual(
+				desired.map((pack) => [pack.blob]).reverse()
+			);
+			expect(log).toHaveBeenCalledWith(
+				`[ResourcePacks] Failed to load ${desired[2 - failed].name}:`,
+				error
+			);
+			expect(cubane.endPackBatchUpdate).toHaveBeenCalledOnce();
+		}
+	);
 	it("waits for restoration before inspecting or changing packs", async () => {
 		const { cubane, manager, run } = fixture();
 		let resolve!: () => void;

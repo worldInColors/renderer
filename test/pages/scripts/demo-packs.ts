@@ -17,10 +17,14 @@ export async function ensureDemoResourcePacks(renderer: SchematicRenderer): Prom
 	packs.beginPackBatchUpdate();
 	try {
 		if (!tweaks) {
-			await packs.loadPackFromUrl("packs/redstone-tweaks.zip", {
-				name: "Redstone Tweaks",
-				priority: Math.min(0, ...all.map((pack) => pack.priority)) - 1,
-			});
+			try {
+				await packs.loadPackFromUrl("packs/redstone-tweaks.zip", {
+					name: "Redstone Tweaks",
+					priority: Math.min(0, ...all.map((pack) => pack.priority)) - 1,
+				});
+			} catch (error) {
+				console.warn("Redstone Tweaks failed to load; continuing with the available packs.", error);
+			}
 		} else {
 			if (!tweaks.enabled) await packs.enablePack(tweaks.id);
 			if (vanilla && tweaks.priority >= vanilla.priority) {

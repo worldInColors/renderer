@@ -29,7 +29,7 @@ export class ShulkrControls extends EventEmitter {
 	constructor(
 		getCamera: () => THREE.Camera,
 		getActiveControls: () => any,
-		options: ShulkrControlsOptions = {},
+		options: ShulkrControlsOptions = {}
 	) {
 		super();
 		this.getCamera = getCamera;
@@ -62,8 +62,13 @@ export class ShulkrControls extends EventEmitter {
 		// radios, buttons and sliders must NOT swallow WASD after being clicked
 		const t = e.target as HTMLElement | null;
 		if (t) {
-			const textInput = t.tagName === "TEXTAREA" || t.isContentEditable ||
-				(t.tagName === "INPUT" && !["checkbox", "radio", "button", "range", "submit"].includes((t as HTMLInputElement).type));
+			const textInput =
+				t.tagName === "TEXTAREA" ||
+				t.isContentEditable ||
+				(t.tagName === "INPUT" &&
+					!["checkbox", "radio", "button", "range", "submit"].includes(
+						(t as HTMLInputElement).type
+					));
 			if (textInput || t.tagName === "SELECT") return;
 		}
 		if (e.code === "Space") e.preventDefault(); // keep the page from scrolling
@@ -97,7 +102,8 @@ export class ShulkrControls extends EventEmitter {
 			if (this.keys.has("KeyD")) target.x += 1;
 			// Space up / Shift down (Minecraft creative); Q/E as alternates
 			if (this.keys.has("Space") || this.keys.has("KeyE")) target.y += 1;
-			if (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") || this.keys.has("KeyQ")) target.y -= 1;
+			if (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") || this.keys.has("KeyQ"))
+				target.y -= 1;
 			if (target.lengthSq() > 0) {
 				target.normalize();
 				// NOTE: no Ctrl sprint — Ctrl+W/S/D are browser shortcuts (Ctrl+W closes the
@@ -114,7 +120,10 @@ export class ShulkrControls extends EventEmitter {
 		// camera-space -> world-space (full 3D forward, pitch included — shulkr flies where you look)
 		const camera = this.getCamera() as THREE.Object3D;
 		if (!camera) return;
-		const move = this.velocity.clone().multiplyScalar(Math.min(dt, 0.1)).applyQuaternion(camera.quaternion);
+		const move = this.velocity
+			.clone()
+			.multiplyScalar(Math.min(dt, 0.1))
+			.applyQuaternion(camera.quaternion);
 		camera.position.add(move);
 
 		// move the orbit target with the camera so the orbit rig translates as one body

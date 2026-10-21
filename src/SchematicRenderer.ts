@@ -664,7 +664,9 @@ export class SchematicRenderer {
 		defaultResourcePacks?: Record<string, DefaultPackCallback>
 	): Promise<void> {
 		this.options.resourcePackBlobs = await initializeResourcePacks(
-			this.cubane, this.resourcePackManager, defaultResourcePacks
+			this.cubane,
+			this.resourcePackManager,
+			defaultResourcePacks
 		);
 		if (this.cubane.getPackCount() === 0) {
 			console.info(
@@ -676,6 +678,7 @@ export class SchematicRenderer {
 	}
 
 	private lastFrameTime = 0;
+	private lastInputAt = -Infinity;
 	private targetFPS: number;
 	private idleFPS: number;
 	// Poll rate (Hz) for advancing animated textures while otherwise idle. 20Hz
@@ -923,8 +926,14 @@ export class SchematicRenderer {
 			if (schematic.hasAnimatedParticles) {
 				if (!particleFrustumReady) {
 					camera.updateMatrixWorld();
-					this.particleProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-					this.particleFrustum.setFromProjectionMatrix(this.particleProjection, camera.coordinateSystem);
+					this.particleProjection.multiplyMatrices(
+						camera.projectionMatrix,
+						camera.matrixWorldInverse
+					);
+					this.particleFrustum.setFromProjectionMatrix(
+						this.particleProjection,
+						camera.coordinateSystem
+					);
 					particleFrustumReady = true;
 				}
 				if (schematic.hasParticlesInView(this.particleFrustum)) {
@@ -948,7 +957,10 @@ export class SchematicRenderer {
 		// invalidate() cancels the poll and wakes us instantly on any real change, so
 		// the idle poll is just a backstop. `wantsRender` (not `shouldRender`) drives
 		// the choice so an fps-capped-but-dirty frame still reschedules promptly.
-		const schedule = pickFrameSchedule({ wantsRender, texturesAnimating: texturesAnimating || particlesAnimating });
+		const schedule = pickFrameSchedule({
+			wantsRender,
+			texturesAnimating: texturesAnimating || particlesAnimating,
+		});
 		if (schedule === "raf") {
 			this.loop.requestFrame();
 		} else {

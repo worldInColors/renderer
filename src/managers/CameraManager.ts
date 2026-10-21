@@ -627,7 +627,7 @@ export class CameraManager extends EventEmitter {
 		this.shulkrControls = new ShulkrControls(
 			() => this.activeCamera.camera,
 			() => this.controls.get(this.activeControlKey),
-			options,
+			options
 		);
 		this.shulkrControls.attach();
 		this.shulkrControls.setEnabled(true);
