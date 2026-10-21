@@ -685,6 +685,7 @@ export class SchematicRenderer {
 	// comfortably covers Minecraft's fastest animations (1-tick frametime = 20fps)
 	// without redrawing every vsync. The actual redraw only happens on a frame flip.
 	private readonly animatedPollFps = 20;
+	private lastSurfaceFrame = -1;
 	private enableAnimatedTextures: boolean;
 	private particleFrustum = new THREE.Frustum();
 	private particleProjection = new THREE.Matrix4();
@@ -908,40 +909,40 @@ export class SchematicRenderer {
 			this.keyboardControls.update(deltaTime);
 		}
 
-		// Animated textures (water/lava/fire/…) are event-driven and off by default.
-		// When enabled we poll the texture timers each tick (cheap time math) and mark
-		// the scene dirty only on the tick a frame actually flips (~10fps for water) —
-		// no per-vsync redraws, so a static view with water still idles to 0fps.
-		const texturesAnimating = this.enableAnimatedTextures && !!this.cubane?.hasAnimatedTextures();
-		if (texturesAnimating && this.cubane.updateAnimations()) {
+		// Share one frustum calculation for particles and animated portal surfaces.
+		let particlesAnimating = false,
+			surfacesAnimating = false,
+			frustumReady = false;
+		for (const schematic of this.schematicManager?.schematics.values() ?? []) {
+			const particles = schematic.hasAnimatedParticles;
+			const surfaces = this.enableAnimatedTextures && schematic.hasAnimatedSurfaces;
+			if (!particles && !surfaces) continue;
+			if (!frustumReady) {
+				camera.updateMatrixWorld();
+				this.particleProjection.multiplyMatrices(
+					camera.projectionMatrix,
+					camera.matrixWorldInverse
+				);
+				this.particleFrustum.setFromProjectionMatrix(
+					this.particleProjection,
+					camera.coordinateSystem
+				);
+				frustumReady = true;
+			}
+			if (particles && schematic.hasParticlesInView(this.particleFrustum))
+				particlesAnimating = true;
+			if (surfaces && schematic.hasSurfacesInView(this.particleFrustum)) surfacesAnimating = true;
+		}
+		const texturesAnimating =
+			this.enableAnimatedTextures && (!!this.cubane?.hasAnimatedTextures() || surfacesAnimating);
+		if (texturesAnimating && this.cubane.updateAnimations()) this.needsRender = true;
+		const surfaceFrame = Math.floor(now / 50);
+		if (surfacesAnimating && surfaceFrame !== this.lastSurfaceFrame) {
+			this.lastSurfaceFrame = surfaceFrame;
 			this.needsRender = true;
 		}
-
-		// Decide whether to render: the FPS cap must allow it AND the scene must be
-		// dirty or continuously animating.
 		const elapsed = now - this.lastFrameTime;
-		let particlesAnimating = false;
-		let particleFrustumReady = false;
-		for (const schematic of this.schematicManager?.schematics.values() ?? []) {
-			if (schematic.hasAnimatedParticles) {
-				if (!particleFrustumReady) {
-					camera.updateMatrixWorld();
-					this.particleProjection.multiplyMatrices(
-						camera.projectionMatrix,
-						camera.matrixWorldInverse
-					);
-					this.particleFrustum.setFromProjectionMatrix(
-						this.particleProjection,
-						camera.coordinateSystem
-					);
-					particleFrustumReady = true;
-				}
-				if (schematic.hasParticlesInView(this.particleFrustum)) {
-					particlesAnimating = true;
-					break;
-				}
-			}
-		}
+
 		const fpsAllows = this.frameInterval === 0 || elapsed >= this.frameInterval;
 		const wantsRender = shouldRenderFrame({
 			needsRender: this.needsRender,

@@ -48,21 +48,26 @@ const initFFmpeg = async () => {
 };
 initFFmpeg();
 const canvas = document.getElementById("canvas") as HTMLCanvasElement;
+const params = new URLSearchParams(window.location.search);
+const schematicUrl = params.get("url");
+const initialSchematics = schematicUrl
+	? {
+			[decodeURIComponent(new URL(schematicUrl, window.location.href).pathname.split("/").pop() || "schematic")]: async () => {
+				const response = await fetch(schematicUrl);
+				if (!response.ok) throw new Error(`Schematic download failed: ${response.status}`);
+				return response.arrayBuffer();
+			},
+		}
+	: { ssDetector: () => Promise.resolve(base64ToArrayBuffer(ssDetector)) };
 
 const renderer = new SchematicRenderer(
 	canvas,
-	{
-		// pistonTest: () =>
-		// 	Promise.resolve(base64ToArrayBuffer(pistonTestBase64String)),
-		// schematicBase64: () => Promise.resolve(base64ToArrayBuffer(chestBase64)),
-		// xor: () => Promise.resolve(base64ToArrayBuffer(xor)),
-		// diagonalCCA: () => Promise.resolve(base64ToArrayBuffer(diagonalCCA)),
-		ssDetector: () => Promise.resolve(base64ToArrayBuffer(ssDetector)),
-	},
+	initialSchematics,
 	demoResourcePacks,
 
 	{
 		ffmpeg: ffmpeg,
+		enableAnimatedTextures: params.get("animate") === "1",
 		cameraOptions: {
 			// defaultCameraPreset: "isometric",
 			// enableZoomInOnLoad: true,

@@ -22,6 +22,7 @@ import MeshBuilderWasmWorker from "./workers/MeshBuilderWasm.worker?worker&inlin
 import { GPUCapabilityManager } from "./gpu/GPUCapabilityManager";
 import { ComputeMeshBuilder } from "./gpu/ComputeMeshBuilder";
 import { getSharedMemoryPool, SharedMemoryPool } from "./workers/SharedMemoryManager";
+import { isSurfaceBlock } from "./meshing/ConnectedGlass";
 
 export const INVISIBLE_BLOCKS = new Set([
 	"minecraft:air",
@@ -559,6 +560,12 @@ export class WorldMeshBuilder {
 
 				for (const { geometry, material } of extractedGeometries) {
 					if (geometry.attributes.position.count === 0) continue;
+					// World-dependent glass connections and portal surfaces are rendered
+					// once by the shared surface pass in every build mode.
+					if (isSurfaceBlock(blockString) && !material.userData.isWater) {
+						geometry.dispose();
+						continue;
+					}
 					if (fluidSurface && (material.userData.isWater || material.userData.isLava)) {
 						removedFluid = true;
 						geometry.dispose();
@@ -1871,6 +1878,7 @@ export class WorldMeshBuilder {
 			blockName.includes("glass") ||
 			blockName.includes("leaves") ||
 			blockName.includes("ice") ||
+			blockName === "minecraft:nether_portal" ||
 			blockName === "minecraft:barrier"
 		)
 			return "transparent";
@@ -1900,7 +1908,7 @@ export class WorldMeshBuilder {
 		}
 	}
 
-	private extractAllMeshData(rootCubaneObject: THREE.Object3D): ProcessedBlockGeometry[] {
+	public extractAllMeshData(rootCubaneObject: THREE.Object3D): ProcessedBlockGeometry[] {
 		const allMeshData: ProcessedBlockGeometry[] = [];
 		rootCubaneObject.updateMatrixWorld(true);
 		const inverseRoot = rootCubaneObject.matrixWorld.clone().invert();

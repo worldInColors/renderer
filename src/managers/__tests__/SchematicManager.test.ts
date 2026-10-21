@@ -25,6 +25,7 @@ vi.mock("../../workers/MeshBuilder.worker?worker&inline", () => ({
 
 vi.mock("../SchematicObject", () => ({
 	SchematicObject: class MockSchematicObject {
+		disposeSurfaceResources = vi.fn();
 		id: string;
 		group = new THREE.Group();
 		schematicWrapper: any;

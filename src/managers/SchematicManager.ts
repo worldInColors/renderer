@@ -418,6 +418,7 @@ export class SchematicManager {
 			console.log("Meshes to remove:", meshes.length);
 
 			// Use the enhanced disposal method for comprehensive cleanup
+			schematicObject.disposeSurfaceResources();
 			disposeGroup(schematicObject.group);
 
 			// Additional cleanup for any remaining references
