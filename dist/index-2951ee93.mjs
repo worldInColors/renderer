@@ -8938,7 +8938,11 @@ class wM extends zC.EventEmitter {
             `Invalid build mode: ${i}. Use 'immediate', 'incremental', 'instanced', or 'batched'.`
           );
       }
-      g.meshes.push(...await this.buildTransparentSurfaces(A));
+      try {
+        g.meshes.push(...await this.buildTransparentSurfaces(A));
+      } catch (L) {
+        this.disposeSurfaceResources(), console.warn("[SchematicObject] transparent surface build failed", L);
+      }
       const s = (performance.memory ? performance.memory.usedJSHeapSize : 0) - Z;
       xA.recordChunkProcessing({
         chunkId: `${this.id}-complete`,
@@ -9644,7 +9648,7 @@ class wM extends zC.EventEmitter {
   async buildFluidSurface(A) {
     this.bubbleMesh = null;
     try {
-      const { buildFluidMeshes: C, setFluidTextures: i, hasFluid: w } = await import("./WaterMesher-41f71303.mjs"), { fluidPaletteStates: Z, createFluidStateLookup: M } = await Promise.resolve().then(() => sc), m = this.getPalettes(A.schematicWrapper).default, D = Z(m);
+      const { buildFluidMeshes: C, setFluidTextures: i, hasFluid: w } = await import("./WaterMesher-800ffcec.mjs"), { fluidPaletteStates: Z, createFluidStateLookup: M } = await Promise.resolve().then(() => sc), m = this.getPalettes(A.schematicWrapper).default, D = Z(m);
       if (!D.some(w))
         return [];
       const [g, V, s] = A.schematicWrapper.get_dimensions();
@@ -10169,7 +10173,13 @@ class wM extends zC.EventEmitter {
     }
   }
   enqueueEdit(A) {
-    const C = this.editQueue.then(async () => (await this.meshesReady, A()));
+    const C = this.editQueue.then(async () => {
+      try {
+        await this.meshesReady;
+      } catch {
+      }
+      return A();
+    });
     return this.editQueue = C.then(
       () => {
       },

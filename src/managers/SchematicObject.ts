@@ -866,7 +866,13 @@ export class SchematicObject extends EventEmitter {
 					);
 			}
 
-			result.meshes.push(...(await this.buildTransparentSurfaces(schematicObject)));
+			try {
+				result.meshes.push(...(await this.buildTransparentSurfaces(schematicObject)));
+			} catch (error) {
+				// Keep the main mesh usable and discard incomplete caches before a retry.
+				this.disposeSurfaceResources();
+				console.warn("[SchematicObject] transparent surface build failed", error);
+			}
 
 			// Track final memory state and record detailed metrics
 			const finalMemory = (performance as any).memory
@@ -3258,7 +3264,12 @@ export class SchematicObject extends EventEmitter {
 
 	private enqueueEdit<T>(operation: () => Promise<T>): Promise<T> {
 		const run = this.editQueue.then(async () => {
-			await this.meshesReady;
+			try {
+				await this.meshesReady;
+			} catch {
+				// Wait for the initial build to settle without blocking recovery operations.
+				// Its original promise still reports the failure to initial-build callers.
+			}
 			return operation();
 		});
 		this.editQueue = run.then(

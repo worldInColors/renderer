@@ -56,7 +56,49 @@ function schematic() {
 		worldMeshBuilder: { extractAllMeshData: (parts: unknown) => parts },
 		rebuildMeshNow: vi.fn(async () => {}),
 	});
-	return { object, loader };
+	return { object, loader, cells };
+}
+
+function buildableSchematic() {
+	const fixture = schematic();
+	const { object, cells } = fixture;
+	delete object.rebuildMeshNow;
+	Object.assign(object, {
+		id: "surface-recovery",
+		name: "surface-recovery",
+		position: new THREE.Vector3(),
+		rotation: new THREE.Euler(),
+		scale: new THREE.Vector3(1, 1, 1),
+		chunkMeshes: new Map(),
+		sceneManager: { schematicRenderer: { options: {} } },
+	});
+	object.schematicRenderer.options.meshBuildingMode = "batched";
+	object.worldMeshBuilder.buildSignMeshes = vi.fn(async () => []);
+	const states = ["minecraft:end_portal", "minecraft:glass"];
+	vi.spyOn(object, "getPalettes").mockReturnValue({ default: states.map((name) => ({ name })) });
+	object.schematicWrapper.create_lazy_chunk_iterator = () => {
+		let done = false;
+		return {
+			has_next: () => !done,
+			next: () => {
+				done = true;
+				return {
+					blocks: [...cells].map(([key, state]) => [
+						...key.split(",").map(Number),
+						states.indexOf(state),
+					]),
+				};
+			},
+			free: vi.fn(),
+		};
+	};
+	const mainBuild = vi
+		.spyOn(object, "buildSchematicMeshesBatched")
+		.mockImplementation(async () => ({
+			meshes: [new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial())],
+			chunkMap: new Map(),
+		}));
+	return { ...fixture, mainBuild };
 }
 const surfaces = (s: any) => s.meshes.filter((m: THREE.Mesh) => m.userData.surfaceMesh);
 const triangles = (meshes: THREE.Mesh[]) =>
@@ -66,6 +108,84 @@ const triangles = (meshes: THREE.Mesh[]) =>
 	);
 
 describe("surface edit lifecycle", () => {
+	it("keeps the main mesh after a surface failure and rebuilds surfaces on retry", async () => {
+		const { object, loader, cells } = buildableSchematic();
+		cells.set("0,0,0", "minecraft:end_portal");
+		cells.set("3,0,0", "minecraft:glass");
+		const failure = new Error("surface material preparation failed");
+		loader.getMaterial.mockRejectedValueOnce(failure);
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const disposeMaterial = vi.spyOn(THREE.ShaderMaterial.prototype, "dispose");
+		try {
+			object.meshesReady = object.buildMeshes();
+			await expect(object.meshesReady).resolves.toBeUndefined();
+			expect(await object.getMeshes()).toEqual(object.meshes);
+			expect(object.meshes).toHaveLength(1);
+			expect(surfaces(object)).toHaveLength(0);
+			expect(warn).toHaveBeenCalledWith(
+				"[SchematicObject] transparent surface build failed",
+				failure
+			);
+			expect(disposeMaterial).toHaveBeenCalledOnce();
+			expect(object.endPortalMaterial).toBeUndefined();
+			expect(object.surfaceTemplates.size).toBe(0);
+			expect(object.surfaceIndex.sections.size).toBe(0);
+			await object.rebuildMesh();
+			expect(object.meshes).toHaveLength(3);
+			expect(triangles(surfaces(object))).toBe(42);
+			expect(object.hasAnimatedSurfaces).toBe(true);
+			expect(loader.getMaterial).toHaveBeenCalledTimes(2);
+		} finally {
+			warn.mockRestore();
+			disposeMaterial.mockRestore();
+		}
+	});
+
+	it("waits for a failed initial build, then runs queued recovery operations in order", async () => {
+		const { object, mainBuild } = buildableSchematic();
+		const failure = new Error("initial worker failure");
+		let rejectInitial!: (error: Error) => void;
+		mainBuild.mockImplementationOnce(
+			() =>
+				new Promise((_, reject) => {
+					rejectInitial = reject;
+				})
+		);
+		object.meshesReady = object.buildMeshes();
+		const initial = expect(object.meshesReady).rejects.toBe(failure);
+		const recovered = Promise.all([
+			object.rebuildMesh(),
+			object.updateMesh(),
+			object.setBlock([0, 0, 0], "minecraft:glass"),
+			object.hideBlockAndRebuild(0, 0, 0),
+			object.unhideAllBlocks(),
+		]);
+		await Promise.resolve();
+		expect(mainBuild).toHaveBeenCalledOnce();
+		rejectInitial(failure);
+		await initial;
+		await recovered;
+		expect(mainBuild).toHaveBeenCalledTimes(3);
+		expect(object.meshes).toHaveLength(2);
+		expect(triangles(surfaces(object))).toBe(36);
+		expect(object.hiddenCells.size).toBe(0);
+		await expect(object.meshesReady).rejects.toBe(failure);
+	});
+
+	it("reports a queued rebuild failure without blocking the next recovery attempt", async () => {
+		const { object, mainBuild } = buildableSchematic();
+		object.meshesReady = object.buildMeshes();
+		await object.meshesReady;
+		const failure = new Error("rebuild worker failure");
+		mainBuild.mockRejectedValueOnce(failure);
+		const failed = expect(object.rebuildMesh()).rejects.toBe(failure);
+		const recovered = object.rebuildMesh();
+		await failed;
+		await recovered;
+		expect(mainBuild).toHaveBeenCalledTimes(3);
+		expect(await object.getMeshes()).toHaveLength(1);
+	});
+
 	it("orders inspector hide after an in-flight edit and treats empty edits as no-ops", async () => {
 		const { object } = schematic();
 		await object.setBlocks([]);
