@@ -1,0 +1,1 @@
+{"version":3,"file":"FluidGeometry.d.ts","sourceRoot":"","sources":["../../src/meshing/FluidGeometry.ts"],"names":[],"mappings":"AAAA,UAAU,iBAAiB;IAC1B,UAAU,EAAE;QAAE,KAAK,CAAC,EAAE,OAAO,GAAG,MAAM,CAAA;KAAE,EAAE,CAAC;IAC3C,cAAc,EAAE,MAAM,CAAC;IACvB,OAAO,EAAE,OAAO,CAAC;CACjB;AAED;;;GAGG;AACH,wBAAgB,oBAAoB,CAAC,CAAC,SAAS,iBAAiB,EAAE,OAAO,EAAE,CAAC,EAAE,GAAG,CAAC,EAAE,CAMnF"}
