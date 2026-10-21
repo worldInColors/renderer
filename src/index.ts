@@ -45,6 +45,7 @@ export { SchematicExporter } from "./export/SchematicExporter";
 export type { SimulationConfig, SimulationState, SyncMode } from "./managers/SimulationManager";
 export type {
 	SchematicRendererOptions,
+	MeshBuildingMode,
 	KeyboardControlsOptions,
 	DebugOptions,
 	GPUComputeOptions,

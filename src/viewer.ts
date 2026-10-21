@@ -28,8 +28,7 @@ export interface SchematicViewerOptions {
 	rendererOptions?: Record<string, unknown>;
 }
 
-const hasWebGPU = (): boolean =>
-	typeof navigator !== "undefined" && "gpu" in navigator;
+const hasWebGPU = (): boolean => typeof navigator !== "undefined" && "gpu" in navigator;
 
 export class SchematicViewer {
 	private renderer: SchematicRenderer | null = null;
@@ -40,7 +39,10 @@ export class SchematicViewer {
 	private loadGen = 0;
 	private loadChain: Promise<void> = Promise.resolve();
 
-	constructor(private container: HTMLElement, private options: SchematicViewerOptions = {}) {
+	constructor(
+		private container: HTMLElement,
+		private options: SchematicViewerOptions = {}
+	) {
 		this.mode = this.resolveMode(options.mode);
 	}
 
@@ -78,17 +80,21 @@ export class SchematicViewer {
 				meshBuildingMode: this.mode as any,
 				enableProgressBar: false,
 				singleSchematicMode: true, // loadSchematic auto-removes the previous build
-				enableDragAndDrop: false,  // the page provides its own drop handler
+				enableDragAndDrop: false, // the page provides its own drop handler
 				wasmMeshBuilderOptions: { enabled: true, greedyMeshingEnabled: false },
 				...(this.options.rendererOptions || {}),
-			} as any,
+			} as any
 		);
 		this.renderer = renderer as any;
 		// controls flavor: "fly" is the FPS mouse-look; "shulkr"/"orbit" map to the
 		// smooth orbit preset (shulkr-style tweaks layer on via renderer options)
 		const controlType = this.options.controls === "fps" ? "fly" : "orbit";
 		// (superseded: config only — the app tick drives damping)
-		try { renderer.cameraManager.switchControls(controlType as any); } catch { /* presets optional */ }
+		try {
+			renderer.cameraManager.switchControls(controlType as any);
+		} catch {
+			/* presets optional */
+		}
 		// damping config on the ACTIVE control; the app tick (CameraManager.update)
 		// drives controls.update(dt) — NO extra RAF loops here (stacked
 		// change-listener chains caused the motion lag)
@@ -103,11 +109,19 @@ export class SchematicViewer {
 				(ocx as any).zoomToCursor = true;
 				(ocx as any).panSpeed = 0.6;
 			}
-		} catch { /* damping optional */ }
+		} catch {
+			/* damping optional */
+		}
 		if (this.options.background !== undefined) {
 			renderer.sceneManager.scene.background = new THREE.Color(this.options.background as any);
 		}
-		this.ro = new ResizeObserver(() => { try { (this.renderer as any)?.renderManager?.onResize?.(); } catch { /* optional */ } });
+		this.ro = new ResizeObserver(() => {
+			try {
+				(this.renderer as any)?.renderManager?.onResize?.();
+			} catch {
+				/* optional */
+			}
+		});
 		this.ro.observe(this.container);
 		this.options.onStatus?.({ phase: "ready", message: `mode: ${this.mode}` });
 		return this;
@@ -121,7 +135,9 @@ export class SchematicViewer {
 		const gen = ++this.loadGen;
 		const prev = this.loadChain;
 		const run = (async () => {
-			await prev.catch(() => { /* previous load's errors are already reported */ });
+			await prev.catch(() => {
+				/* previous load's errors are already reported */
+			});
 			if (gen !== this.loadGen) return; // a newer load superseded this one
 			await this.doLoad(url, name);
 		})();
@@ -132,7 +148,8 @@ export class SchematicViewer {
 	private async doLoad(url: string, name?: string): Promise<void> {
 		if (!this.renderer) await this.init();
 		this.currentUrl = url;
-		const displayName = name || new URL(url, location.href).pathname.split("/").pop() || "schematic";
+		const displayName =
+			name || new URL(url, location.href).pathname.split("/").pop() || "schematic";
 		try {
 			this.options.onStatus?.({ phase: "fetching", message: displayName });
 			const res = await fetch(url);
@@ -156,8 +173,16 @@ export class SchematicViewer {
 			});
 			// reframe on the replaced build (single mode swaps the schematic out; the
 			// old framing leaves a tiny build as an invisible speck) + force a present
-			try { (r as any).cameraManager?.focusOnSchematics({ animationDuration: 0 }); } catch { /* framing optional */ }
-			try { (r as any).renderManager?.render(); } catch { /* */ }
+			try {
+				(r as any).cameraManager?.focusOnSchematics({ animationDuration: 0 });
+			} catch {
+				/* framing optional */
+			}
+			try {
+				(r as any).renderManager?.render();
+			} catch {
+				/* */
+			}
 			this.options.onStatus?.({ phase: "done", message: displayName });
 		} catch (err) {
 			this.options.onError?.(err);
@@ -178,12 +203,20 @@ export class SchematicViewer {
 		await this.load(this.currentUrl);
 	}
 
-	get activeMode(): string { return this.mode; }
-	get raw(): SchematicRenderer | null { return this.renderer; }
+	get activeMode(): string {
+		return this.mode;
+	}
+	get raw(): SchematicRenderer | null {
+		return this.renderer;
+	}
 
 	dispose(): void {
 		this.ro?.disconnect();
-		try { this.renderer?.dispose?.(); } catch { /* best effort */ }
+		try {
+			this.renderer?.dispose?.();
+		} catch {
+			/* best effort */
+		}
 		this.canvas?.parentElement?.removeChild(this.canvas);
 		this.renderer = null;
 		this.canvas = null;
@@ -192,7 +225,7 @@ export class SchematicViewer {
 
 export function createSchematicViewer(
 	container: HTMLElement,
-	options?: SchematicViewerOptions,
+	options?: SchematicViewerOptions
 ): SchematicViewer {
 	return new SchematicViewer(container, options);
 }

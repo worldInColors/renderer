@@ -40,7 +40,12 @@ export class BlockMeshBuilder {
 			// against liquid neighbours (an interior shell at every block boundary).
 			// Full cubes are flush, so same-category neighbour culling keeps only
 			// the outer surface — one continuous shell.
-			mesh = await this.createBlockMeshNoWater(this.fullCubeLiquidModel(blockData), transform, block, biome);
+			mesh = await this.createBlockMeshNoWater(
+				this.fullCubeLiquidModel(blockData),
+				transform,
+				block,
+				biome
+			);
 		} else {
 			mesh = await this.createBlockMeshNoWater(model, transform, block, biome);
 		}
@@ -434,11 +439,7 @@ export class BlockMeshBuilder {
 
 			// APPLY ATLAS UV MAPPING HERE
 			const atlas = this.assetLoader.getTextureAtlas();
-			if (
-				atlas &&
-				group.material.userData?.atlasUV &&
-				this.shouldUseAtlas(group.texturePath, group.isLiquid)
-			) {
+			if (atlas && group.material.userData?.atlasUV && this.shouldUseAtlas()) {
 				this.applyAtlasUVMapping(geometry, group.material.userData.atlasUV);
 			}
 
@@ -593,7 +594,7 @@ export class BlockMeshBuilder {
 		return geometry;
 	}
 
-	private shouldUseAtlas(texturePath: string, isLiquid?: boolean): boolean {
+	private shouldUseAtlas(): boolean {
 		// Check if atlas is available
 		const atlas = this.assetLoader.getTextureAtlas();
 		if (!atlas) {
@@ -700,7 +701,7 @@ export class BlockMeshBuilder {
 
 		// Apply atlas UV mapping if available and appropriate
 		const atlas = this.assetLoader.getTextureAtlas();
-		if (atlas && material.userData?.atlasUV && this.shouldUseAtlas(texturePath, isLiquid)) {
+		if (atlas && material.userData?.atlasUV && this.shouldUseAtlas()) {
 			this.applyAtlasUVMapping(geometry, material.userData.atlasUV);
 		}
 
@@ -829,13 +830,26 @@ export class BlockMeshBuilder {
 		const [x1, y1, z1] = element.to;
 		let uv: number[];
 		switch (direction) {
-			case "down": uv = [x0, 16 - z1, x1, 16 - z0]; break;
-			case "up": uv = [x0, z0, x1, z1]; break;
-			case "north": uv = [16 - x1, 16 - y1, 16 - x0, 16 - y0]; break;
-			case "south": uv = [x0, 16 - y1, x1, 16 - y0]; break;
-			case "west": uv = [z0, 16 - y1, z1, 16 - y0]; break;
-			case "east": uv = [16 - z1, 16 - y1, 16 - z0, 16 - y0]; break;
-			default: throw new Error(`Unknown face direction: ${direction}`);
+			case "down":
+				uv = [x0, 16 - z1, x1, 16 - z0];
+				break;
+			case "up":
+				uv = [x0, z0, x1, z1];
+				break;
+			case "north":
+				uv = [16 - x1, 16 - y1, 16 - x0, 16 - y0];
+				break;
+			case "south":
+				uv = [x0, 16 - y1, x1, 16 - y0];
+				break;
+			case "west":
+				uv = [z0, 16 - y1, z1, 16 - y0];
+				break;
+			case "east":
+				uv = [16 - z1, 16 - y1, 16 - z0, 16 - y0];
+				break;
+			default:
+				throw new Error(`Unknown face direction: ${direction}`);
 		}
 		// Models are cached: never write generated UVs back into the source face.
 		return { ...face, uv };
@@ -1111,7 +1125,7 @@ export class BlockMeshBuilder {
 			}
 
 			// Determine if we should use atlas for this texture
-			const useAtlas = this.shouldUseAtlas(texturePath, isLiquid);
+			const useAtlas = this.shouldUseAtlas();
 
 			// A liquid is "flowing" when it has a non-zero level (source water is
 			// level 0). Only flowing liquid uses the *_flow texture on its sides.

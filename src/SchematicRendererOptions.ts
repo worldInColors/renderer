@@ -251,6 +251,14 @@ export interface WebGPURendererOptions {
 	forceWebGPU?: boolean;
 }
 
+export type MeshBuildingMode =
+	| "immediate"
+	| "incremental"
+	| "instanced"
+	| "batched"
+	| "gpu"
+	| "gpu-pull";
+
 export interface SchematicRendererOptions {
 	backgroundColor?: number | string; // Accepts hex color or CSS color string
 	hdri?: string;
@@ -258,7 +266,7 @@ export interface SchematicRendererOptions {
 	ffmpeg?: any;
 	gamma?: number;
 	chunkSideLength?: number; // Length of each chunk side in blocks
-	meshBuildingMode?: "immediate" | "incremental" | "instanced" | "batched"; // How meshes are built
+	meshBuildingMode?: MeshBuildingMode; // How meshes are built
 	// Global toggles for enabling/disabling functionalities
 	enableInteraction?: boolean;
 	enableDragAndDrop?: boolean;

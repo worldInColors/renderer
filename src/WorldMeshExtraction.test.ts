@@ -22,9 +22,10 @@ describe("palette mesh extraction", () => {
 			initializeWorkers: () => {},
 			workers: [],
 		});
-		await builder.precomputePaletteGeometries([
-			{ name: "minecraft:scaffolding", properties: { waterlogged: "true" } },
-		], true);
+		await builder.precomputePaletteGeometries(
+			[{ name: "minecraft:scaffolding", properties: { waterlogged: "true" } }],
+			true
+		);
 		const [block] = builder.paletteCache.paletteGeometryData;
 		expect(block.category).toBe("solid");
 		expect(block.geometries).toHaveLength(1);

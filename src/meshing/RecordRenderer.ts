@@ -21,7 +21,9 @@ export interface RecordStream {
 	// one concatenated record array per transparency category: pairs (cell, row)
 	perCategory: { category: string; records: Uint32Array; tris: number }[];
 	tables: RecordTables;
-	sx: number; sy: number; sz: number;
+	sx: number;
+	sy: number;
+	sz: number;
 }
 
 const RW = 8192; // records texture width (chunk rows ≤ 1024 → ≤64MB per texture, D3D-cap-safe)
@@ -34,9 +36,9 @@ const CHUNK_TRIS = RW * 1024; // records per chunk texture
 // transparent category), and flattens visible 64-item "pages" into a small lookup
 // texture. The vertex shader maps slot -> page -> real record, so culling + early-Z
 // ordering cost ONE draw per category (no per-section meshes, no per-draw overhead).
-const SEC = 16;   // section edge in blocks
-const PAGE = 64;  // items (tris or quads) per page slot
-const PW = 1024;  // page-table texture width
+const SEC = 16; // section edge in blocks
+const PAGE = 64; // items (tris or quads) per page slot
+const PW = 1024; // page-table texture width
 
 export interface SectionRange {
 	base: number; // first item index of this section (in the reordered stream)
@@ -55,7 +57,7 @@ export function sectionize(
 	items: number,
 	sx: number,
 	sy: number,
-	sz: number,
+	sz: number
 ): { rec: Uint32Array; sections: SectionRange[] } {
 	if (items === 0) return { rec: records, sections: [] };
 	if (items > SECTIONIZE_MAX) {
@@ -64,7 +66,9 @@ export function sectionize(
 			sections: [{ base: 0, count: items, box: [-2, -2, -2, sx + 2, sy + 2, sz + 2] }],
 		};
 	}
-	const nx = Math.ceil(sx / SEC), ny = Math.ceil(sy / SEC), nz = Math.ceil(sz / SEC);
+	const nx = Math.ceil(sx / SEC),
+		ny = Math.ceil(sy / SEC),
+		nz = Math.ceil(sz / SEC);
 	const nSec = nx * ny * nz;
 	// counting pass (section id recomputed in the scatter pass — no items-sized index array)
 	const counts = new Uint32Array(nSec + 1);
@@ -91,7 +95,9 @@ export function sectionize(
 		const y0 = ((s / (nx * nz)) | 0) * SEC;
 		const z0 = (((s / nx) | 0) % nz) * SEC;
 		const x0 = (s % nx) * SEC;
-		const x1 = Math.min(sx, x0 + SEC) - 1, y1 = Math.min(sy, y0 + SEC) - 1, z1 = Math.min(sz, z0 + SEC) - 1;
+		const x1 = Math.min(sx, x0 + SEC) - 1,
+			y1 = Math.min(sy, y0 + SEC) - 1,
+			z1 = Math.min(sz, z0 + SEC) - 1;
 		// pad generously: template geometry can leave the 0..1 cell (crosses, candles, …)
 		const P = 2.0;
 		sections.push({
@@ -108,14 +114,15 @@ export function sectionize(
 function chunkWithSections(
 	rec: Uint32Array,
 	sections: SectionRange[],
-	_chunk: number,
+	_chunk: number
 ): { rec: Uint32Array; items: number; sections: SectionRange[] }[] {
 	const out: { rec: Uint32Array; items: number; sections: SectionRange[] }[] = [];
 	for (let base = 0; base < sectionsTotal(sections); base += CHUNK_TRIS) {
 		const items = Math.min(CHUNK_TRIS, sectionsTotal(sections) - base);
 		const clipped: SectionRange[] = [];
 		for (const s of sections) {
-			const a = Math.max(s.base, base), b = Math.min(s.base + s.count, base + items);
+			const a = Math.max(s.base, base),
+				b = Math.min(s.base + s.count, base + items);
 			if (a < b) clipped.push({ base: a - base, count: b - a, box: s.box });
 		}
 		out.push({ rec: rec.subarray(base * 2, (base + items) * 2), items, sections: clipped });
@@ -136,22 +143,29 @@ function attachSectionCulling(
 	pageTable: THREE.DataTexture,
 	pageData: Uint32Array,
 	perItem: number, // 3 (tri) or 6 (quad — drawRange is in index units)
-	backToFront: boolean,
+	backToFront: boolean
 ): void {
 	const frustum = new THREE.Frustum();
 	const vp = new THREE.Matrix4();
 	const worldBoxes = sections.map(() => new THREE.Box3());
-	const gridBoxes = sections.map((s) => new THREE.Box3(
-		new THREE.Vector3(s.box[0], s.box[1], s.box[2]),
-		new THREE.Vector3(s.box[3], s.box[4], s.box[5]),
-	));
+	const gridBoxes = sections.map(
+		(s) =>
+			new THREE.Box3(
+				new THREE.Vector3(s.box[0], s.box[1], s.box[2]),
+				new THREE.Vector3(s.box[3], s.box[4], s.box[5])
+			)
+	);
 	const order: number[] = [];
 	mesh.onBeforeRender = (_renderer, _scene, camera) => {
 		// strip animation clock (liquid still/flow)
 		const mat = mesh.material as THREE.ShaderMaterial;
 		if (mat.uniforms?.uTime) mat.uniforms.uTime.value = performance.now() / 1000;
 		// lazy-bind the liquid frame array (registered by AssetLoader after atlas build)
-		if (mat.uniforms?.uWaterFramesOn && mat.uniforms.uWaterFramesOn.value === 0 && liquidFrameTextures.water) {
+		if (
+			mat.uniforms?.uWaterFramesOn &&
+			mat.uniforms.uWaterFramesOn.value === 0 &&
+			liquidFrameTextures.water
+		) {
 			mat.uniforms.uWaterFrames.value = liquidFrameTextures.water;
 			mat.uniforms.uWaterFramesOn.value = 1;
 		}
@@ -162,12 +176,15 @@ function attachSectionCulling(
 		// matrixWorld from a moved parent — stale world boxes culled visible sections
 		// ("blocks vanish from afar, appear elsewhere as the view changes")
 		mesh.updateWorldMatrix(true, false);
-		for (let i = 0; i < gridBoxes.length; i++) worldBoxes[i].copy(gridBoxes[i]).applyMatrix4(mesh.matrixWorld);
+		for (let i = 0; i < gridBoxes.length; i++)
+			worldBoxes[i].copy(gridBoxes[i]).applyMatrix4(mesh.matrixWorld);
 		order.length = 0;
 		const cp = camera.getWorldPosition(new THREE.Vector3());
-		for (let i = 0; i < worldBoxes.length; i++) if (frustum.intersectsBox(worldBoxes[i])) order.push(i);
+		for (let i = 0; i < worldBoxes.length; i++)
+			if (frustum.intersectsBox(worldBoxes[i])) order.push(i);
 		order.sort((a, b) => {
-			const da = boxDistSq(worldBoxes[a], cp), db = boxDistSq(worldBoxes[b], cp);
+			const da = boxDistSq(worldBoxes[a], cp),
+				db = boxDistSq(worldBoxes[b], cp);
 			return backToFront ? db - da : da - db;
 		});
 		// flatten visible sections into pages
@@ -181,7 +198,10 @@ function attachSectionCulling(
 				p++;
 			}
 		}
-		for (let i = p; i < pageData.length / 2; i++) { pageData[i * 2] = 0; pageData[i * 2 + 1] = 0; }
+		for (let i = p; i < pageData.length / 2; i++) {
+			pageData[i * 2] = 0;
+			pageData[i * 2 + 1] = 0;
+		}
 		pageTable.needsUpdate = true;
 		(mesh as any).userData.pagesDrawn = p;
 		// the quad path's drawRange is in INDEX units: page padding can push the count
@@ -279,14 +299,14 @@ void main() {
   gl_Position = projectionMatrix * (modelViewMatrix * vec4(world, 1.0));
 }`;
 
-const PULL_VERT_QUAD = PULL_VERT
-	.replace("uint slot = vid / 3u;", "uint slot = vid / 4u;")
+const PULL_VERT_QUAD = PULL_VERT.replace("uint slot = vid / 3u;", "uint slot = vid / 4u;")
 	.replace("uint k = vid - slot * 3u;", "uint k = vid - slot * 4u;")
 	// the tri-path ternary only handles k in 0..2; quad corner 3 fell through to
 	// corner 2 (collapsing the second triangle — the "half texture" bug)
 	.replace(
 		"uint vi = k == 0u ? corners.x : (k == 1u ? corners.y : corners.z);",
-		"uint vi = k == 0u ? corners.x : (k == 1u ? corners.y : (k == 2u ? corners.z : corners.w));");
+		"uint vi = k == 0u ? corners.x : (k == 1u ? corners.y : (k == 2u ? corners.z : corners.w));"
+	);
 
 const PULL_FRAG_BASE = /* glsl */ `
 precision highp float;
@@ -417,7 +437,11 @@ void main() {
  *  shared automatically by three's program cache). */
 /** Liquid animation frames as array-texture layers, registered by AssetLoader at
  * atlas build (fable design: hardware RepeatWrapping per layer — no atlas bleed). */
-export const liquidFrameTextures: { water: THREE.DataArrayTexture | null; waterFlow: THREE.DataArrayTexture | null; lava: THREE.DataArrayTexture | null } = {
+export const liquidFrameTextures: {
+	water: THREE.DataArrayTexture | null;
+	waterFlow: THREE.DataArrayTexture | null;
+	lava: THREE.DataArrayTexture | null;
+} = {
 	water: null,
 	waterFlow: null,
 	lava: null,
@@ -426,9 +450,9 @@ export const liquidFrameTextures: { water: THREE.DataArrayTexture | null; waterF
 export function makePullMaterial(transparent: boolean, quad = false): THREE.ShaderMaterial {
 	// discard kills early-Z on the OPAQUE pass (measured: 320ms/frame up close on 30M
 	// tris) — the solid material is discard-free; only the transparent pass keeps cutout
-	const frag = (transparent
+	const frag = transparent
 		? PULL_FRAG_BASE.replace("/*CUTOUT*/", "if (c.a < 0.5) discard;").replace("/*ALPHA*/", "c.a")
-		: PULL_FRAG_BASE.replace("/*CUTOUT*/", "").replace("/*ALPHA*/", "1.0"));
+		: PULL_FRAG_BASE.replace("/*CUTOUT*/", "").replace("/*ALPHA*/", "1.0");
 	return new THREE.ShaderMaterial({
 		glslVersion: THREE.GLSL3,
 		vertexShader: quad ? PULL_VERT_QUAD : PULL_VERT,
@@ -455,7 +479,6 @@ export function makePullMaterial(transparent: boolean, quad = false): THREE.Shad
 			uTime: { value: 0 }, // strip animation clock (set per frame in onBeforeRender)
 			uWaterFrames: { value: null },
 			uWaterFramesOn: { value: 0 },
-
 		},
 	});
 }
@@ -478,7 +501,13 @@ function padToFullF(w: number, h: number, data: Float32Array): Float32Array {
 	full.set(data);
 	return full;
 }
-function makeUintTex(w: number, h: number, data: Uint32Array, format: THREE.PixelFormat, internal: string) {
+function makeUintTex(
+	w: number,
+	h: number,
+	data: Uint32Array,
+	format: THREE.PixelFormat,
+	internal: string
+) {
 	const chans = format === THREE.RGIntegerFormat ? 2 : 4; // RG32UI packs 2 uints/texel
 	data = padToFull(w, h, data, chans);
 	const tex = new THREE.DataTexture(data, w, h, format, THREE.UnsignedIntType);
@@ -512,8 +541,17 @@ function makeFloatTex(w: number, h: number, data: Float32Array) {
 export function quadify(
 	records: Uint32Array,
 	tris: number,
-	isQuadPair: (rowA: number, rowB: number) => { quad: boolean; corners: [number, number, number, number] | null },
-): { quadRec: Uint32Array; quads: number; cornerTable: number[]; triRec: Uint32Array; triTris: number } {
+	isQuadPair: (
+		rowA: number,
+		rowB: number
+	) => { quad: boolean; corners: [number, number, number, number] | null }
+): {
+	quadRec: Uint32Array;
+	quads: number;
+	cornerTable: number[];
+	triRec: Uint32Array;
+	triTris: number;
+} {
 	// Records from different cells INTERLEAVE within a segment (atomic emission order),
 	// so stream adjacency can't be trusted — pair via a pending map keyed by cell. Rows
 	// emit in ascending order per cell, so a quad-start row always precedes its partner.
@@ -533,11 +571,13 @@ export function quadify(
 	const quadCells = new Uint32Array(Math.ceil(tris / 2));
 	const quadRows = new Uint32Array(Math.ceil(tris / 2));
 	const triRecArr = new Uint32Array(tris * 2);
-	let nQuads = 0, nTri = 0;
+	let nQuads = 0,
+		nTri = 0;
 	const consumed = new Uint8Array(tris);
 	const pending = new Map<number, number>(); // cell -> stream index of the awaiting quad-start record
 	for (let i = 0; i < tris; i++) {
-		const cell = records[i * 2], row = records[i * 2 + 1];
+		const cell = records[i * 2],
+			row = records[i * 2 + 1];
 		const prev = pending.get(cell);
 		if (prev !== undefined && records[prev * 2 + 1] === row - 1) {
 			const corners = cornersFor(row - 1);
@@ -566,7 +606,10 @@ export function quadify(
 		quadRec[q * 2 + 1] = quadRows[q];
 	}
 	for (let i = 0; i < tris; i++) {
-		if (!consumed[i]) { triRecArr[nTri++] = records[i * 2]; triRecArr[nTri++] = records[i * 2 + 1]; }
+		if (!consumed[i]) {
+			triRecArr[nTri++] = records[i * 2];
+			triRecArr[nTri++] = records[i * 2 + 1];
+		}
 	}
 	return {
 		quadRec,
@@ -581,8 +624,12 @@ export function quadify(
 export function makeQuadIndexBuffer(maxQuads: number): THREE.BufferAttribute {
 	const idx = new Uint32Array(maxQuads * 6);
 	for (let q = 0, v = 0, j = 0; q < maxQuads; q++, v += 4) {
-		idx[j++] = v; idx[j++] = v + 1; idx[j++] = v + 2;
-		idx[j++] = v; idx[j++] = v + 2; idx[j++] = v + 3;
+		idx[j++] = v;
+		idx[j++] = v + 1;
+		idx[j++] = v + 2;
+		idx[j++] = v;
+		idx[j++] = v + 2;
+		idx[j++] = v + 3;
 	}
 	return new THREE.BufferAttribute(idx, 1);
 }
@@ -590,7 +637,10 @@ export function makeQuadIndexBuffer(maxQuads: number): THREE.BufferAttribute {
 export function makeRecordMeshes(
 	stream: RecordStream,
 	atlas: THREE.Texture,
-	isQuadPair?: (rowA: number, rowB: number) => { quad: boolean; corners: [number, number, number, number] | null },
+	isQuadPair?: (
+		rowA: number,
+		rowB: number
+	) => { quad: boolean; corners: [number, number, number, number] | null }
 ): THREE.Mesh[] {
 	const t = stream.tables;
 	const rowH = Math.ceil(t.rows / TW);
@@ -604,20 +654,25 @@ export function makeRecordMeshes(
 	for (const cat of stream.perCategory) {
 		if (cat.tris === 0) continue;
 		const transparent = cat.category !== "solid";
-		const y0 = (cat as any).y0 ?? 0, sh = (cat as any).h ?? stream.sy;
+		const y0 = (cat as any).y0 ?? 0,
+			sh = (cat as any).h ?? stream.sy;
 		// quad-merge pass (JS-side; emission stream untouched): pairs of adjacent
 		// same-cell records whose template rows form [a,b,c]+[a,c,d] become ONE quad
 		// record drawn via the shared static index pattern (4 invocations, not 6)
 		let quadData: { quadRec: Uint32Array; quads: number; cornerTable: number[] } | null = null;
-		let triRec = cat.records, triTris = cat.tris;
+		let triRec = cat.records,
+			triTris = cat.tris;
 		if (isQuadPair) {
 			const q = quadify(cat.records, cat.tris, isQuadPair);
 			quadData = { quadRec: q.quadRec, quads: q.quads, cornerTable: q.cornerTable };
-			triRec = q.triRec; triTris = q.triTris;
+			triRec = q.triRec;
+			triTris = q.triTris;
 		}
 		// section-order both streams (pure permutation) for page culling
 		const triSec = sectionize(triRec, triTris, stream.sx, stream.sy, stream.sz);
-		const quadSec = quadData ? sectionize(quadData.quadRec, quadData.quads, stream.sx, stream.sy, stream.sz) : null;
+		const quadSec = quadData
+			? sectionize(quadData.quadRec, quadData.quads, stream.sx, stream.sy, stream.sz)
+			: null;
 		for (const chunk of chunkWithSections(triSec.rec, triSec.sections, CHUNK_TRIS)) {
 			const { rec, items: n, sections } = chunk;
 			if (n === 0) continue;
@@ -629,7 +684,13 @@ export function makeRecordMeshes(
 			// page table (all-visible initially; onBeforeRender rewrites it per frame)
 			const maxPages = Math.ceil(n / PAGE);
 			const pageData = new Uint32Array(PW * Math.ceil(maxPages / PW) * 2);
-			const pageTex = makeUintTex(PW, Math.ceil(maxPages / PW), pageData, THREE.RGIntegerFormat, "RG32UI");
+			const pageTex = makeUintTex(
+				PW,
+				Math.ceil(maxPages / PW),
+				pageData,
+				THREE.RGIntegerFormat,
+				"RG32UI"
+			);
 			const material = makePullMaterial(transparent);
 			// WATER depth-writes (vanilla's translucent pass does too): without it,
 			// looking through N stacked water shells alpha-compounds (0.84^N) and the
@@ -647,7 +708,12 @@ export function makeRecordMeshes(
 			{
 				const b = Math.log2(stream.sx);
 				const ok = stream.sx === stream.sz && Number.isInteger(b) && stream.sx > 0;
-				material.uniforms.uPow2.value.set(ok ? stream.sx - 1 : 0, ok ? b : 0, ok ? b * 2 : 0, ok ? 1 : 0);
+				material.uniforms.uPow2.value.set(
+					ok ? stream.sx - 1 : 0,
+					ok ? b : 0,
+					ok ? b * 2 : 0,
+					ok ? 1 : 0
+				);
 			}
 			material.uniforms.uAtlas.value = atlas;
 			// EMPTY geometry (no attributes — a dummy position would CLAMP the draw);
@@ -656,7 +722,7 @@ export function makeRecordMeshes(
 			geometry.setDrawRange(0, Math.ceil(n / PAGE) * PAGE * 3);
 			geometry.boundingBox = new THREE.Box3(
 				new THREE.Vector3(-0.51, y0 - 0.51, -0.51),
-				new THREE.Vector3(stream.sx - 0.49, y0 + sh + 0.01, stream.sz - 0.49),
+				new THREE.Vector3(stream.sx - 0.49, y0 + sh + 0.01, stream.sz - 0.49)
 			);
 			geometry.boundingSphere = geometry.boundingBox.getBoundingSphere(new THREE.Sphere());
 			const mesh = new THREE.Mesh(geometry, material);
@@ -677,7 +743,13 @@ export function makeRecordMeshes(
 			const QUAD_CHUNK = 12_000_000; // 288MB index buffer per mesh
 			const cornerTable = new Uint32Array(Math.max(quadData.cornerTable.length, TW * 4));
 			cornerTable.set(quadData.cornerTable);
-			const rowTexQ = makeUintTex(TW, Math.ceil(cornerTable.length / 4 / TW), cornerTable, THREE.RGBAIntegerFormat, "RGBA32UI");
+			const rowTexQ = makeUintTex(
+				TW,
+				Math.ceil(cornerTable.length / 4 / TW),
+				cornerTable,
+				THREE.RGBAIntegerFormat,
+				"RGBA32UI"
+			);
 			for (const qchunk of chunkWithSections(quadSec!.rec, quadSec!.sections, QUAD_CHUNK)) {
 				const { rec: qrec, items: nQ, sections: qsections } = qchunk;
 				if (nQ === 0) continue;
@@ -688,38 +760,49 @@ export function makeRecordMeshes(
 				const material = makePullMaterial(transparent, true);
 				if (cat.category === "water") material.depthWrite = true; // see tri path note
 				material.uniforms.uRecords.value = recTexQ;
-			material.uniforms.uRows.value = rowTexQ;
-			material.uniforms.uPos.value = posTex;
-			material.uniforms.uNrm.value = nrmTex;
-			material.uniforms.uUv.value = uvTex;
-			material.uniforms.uDims.value.set(stream.sx, stream.sy, stream.sz);
-			// pow2 fast decode when the footprint is square and a power of two
-			{
-				const b = Math.log2(stream.sx);
-				const ok = stream.sx === stream.sz && Number.isInteger(b) && stream.sx > 0;
-				material.uniforms.uPow2.value.set(ok ? stream.sx - 1 : 0, ok ? b : 0, ok ? b * 2 : 0, ok ? 1 : 0);
-			}
-			material.uniforms.uAtlas.value = atlas;
-			const maxPagesQ = Math.ceil(nQ / PAGE);
-			const pageDataQ = new Uint32Array(PW * Math.ceil(maxPagesQ / PW) * 2);
-			const pageTexQ = makeUintTex(PW, Math.ceil(maxPagesQ / PW), pageDataQ, THREE.RGIntegerFormat, "RG32UI");
-			material.uniforms.uPages.value = pageTexQ;
-			const geometry = new THREE.BufferGeometry();
-			geometry.setIndex(makeQuadIndexBuffer(nQ));
-			geometry.setDrawRange(0, Math.min(Math.ceil(nQ / PAGE) * PAGE * 6, nQ * 6));
-			geometry.boundingBox = new THREE.Box3(
-				new THREE.Vector3(-0.51, y0 - 0.51, -0.51),
-				new THREE.Vector3(stream.sx - 0.49, y0 + sh + 0.01, stream.sz - 0.49),
-			);
-			geometry.boundingSphere = geometry.boundingBox.getBoundingSphere(new THREE.Sphere());
-			const mesh = new THREE.Mesh(geometry, material);
-			mesh.userData.category = cat.category;
-			mesh.userData.gpuBuilt = true;
-			mesh.userData.recordDrawn = nQ;
-			mesh.matrixAutoUpdate = false;
-			mesh.updateMatrix();
-			attachSectionCulling(mesh, qsections, pageTexQ, pageDataQ, 6, transparent);
-			meshes.push(mesh);
+				material.uniforms.uRows.value = rowTexQ;
+				material.uniforms.uPos.value = posTex;
+				material.uniforms.uNrm.value = nrmTex;
+				material.uniforms.uUv.value = uvTex;
+				material.uniforms.uDims.value.set(stream.sx, stream.sy, stream.sz);
+				// pow2 fast decode when the footprint is square and a power of two
+				{
+					const b = Math.log2(stream.sx);
+					const ok = stream.sx === stream.sz && Number.isInteger(b) && stream.sx > 0;
+					material.uniforms.uPow2.value.set(
+						ok ? stream.sx - 1 : 0,
+						ok ? b : 0,
+						ok ? b * 2 : 0,
+						ok ? 1 : 0
+					);
+				}
+				material.uniforms.uAtlas.value = atlas;
+				const maxPagesQ = Math.ceil(nQ / PAGE);
+				const pageDataQ = new Uint32Array(PW * Math.ceil(maxPagesQ / PW) * 2);
+				const pageTexQ = makeUintTex(
+					PW,
+					Math.ceil(maxPagesQ / PW),
+					pageDataQ,
+					THREE.RGIntegerFormat,
+					"RG32UI"
+				);
+				material.uniforms.uPages.value = pageTexQ;
+				const geometry = new THREE.BufferGeometry();
+				geometry.setIndex(makeQuadIndexBuffer(nQ));
+				geometry.setDrawRange(0, Math.min(Math.ceil(nQ / PAGE) * PAGE * 6, nQ * 6));
+				geometry.boundingBox = new THREE.Box3(
+					new THREE.Vector3(-0.51, y0 - 0.51, -0.51),
+					new THREE.Vector3(stream.sx - 0.49, y0 + sh + 0.01, stream.sz - 0.49)
+				);
+				geometry.boundingSphere = geometry.boundingBox.getBoundingSphere(new THREE.Sphere());
+				const mesh = new THREE.Mesh(geometry, material);
+				mesh.userData.category = cat.category;
+				mesh.userData.gpuBuilt = true;
+				mesh.userData.recordDrawn = nQ;
+				mesh.matrixAutoUpdate = false;
+				mesh.updateMatrix();
+				attachSectionCulling(mesh, qsections, pageTexQ, pageDataQ, 6, transparent);
+				meshes.push(mesh);
 			}
 		}
 	}
@@ -727,22 +810,30 @@ export function makeRecordMeshes(
 }
 
 export function buildRecordTables(
-	tplPos: number[], tplNrm: number[], tplUv: number[], tplIdx: number[],
+	tplPos: number[],
+	tplNrm: number[],
+	tplUv: number[],
+	tplIdx: number[],
 	desc: number[], // flat [vertStart, idxStart, triStart, occ] per state (stride 4)
 	desc2: number[], // flat [vertCount, idxCount, category, slotBase] per state (stride 4)
 	states: number, // maxIdx
 	tplPosW: number[] = [], // per-vertex anim frame step (pos.w)
 	tplNrmW: number[] = [], // per-vertex anim frame-top V (nrm.w)
-	tplUvW: number[] = [], // per-vertex signed anim frames (uv.w)
+	tplUvW: number[] = [] // per-vertex signed anim frames (uv.w)
 ): RecordTables {
 	const verts = tplPos.length / 3;
 	const padPos = new Float32Array(verts * 4);
 	const padNrm = new Float32Array(verts * 4);
 	const padUv = new Float32Array(verts * 4);
 	for (let v = 0; v < verts; v++) {
-		padPos[v * 4] = tplPos[v * 3]; padPos[v * 4 + 1] = tplPos[v * 3 + 1]; padPos[v * 4 + 2] = tplPos[v * 3 + 2];
-		padNrm[v * 4] = tplNrm[v * 3]; padNrm[v * 4 + 1] = tplNrm[v * 3 + 1]; padNrm[v * 4 + 2] = tplNrm[v * 3 + 2];
-		padUv[v * 4] = tplUv[v * 2]; padUv[v * 4 + 1] = tplUv[v * 2 + 1];
+		padPos[v * 4] = tplPos[v * 3];
+		padPos[v * 4 + 1] = tplPos[v * 3 + 1];
+		padPos[v * 4 + 2] = tplPos[v * 3 + 2];
+		padNrm[v * 4] = tplNrm[v * 3];
+		padNrm[v * 4 + 1] = tplNrm[v * 3 + 1];
+		padNrm[v * 4 + 2] = tplNrm[v * 3 + 2];
+		padUv[v * 4] = tplUv[v * 2];
+		padUv[v * 4 + 1] = tplUv[v * 2 + 1];
 		padPos[v * 4 + 3] = tplPosW[v] || 0;
 		padNrm[v * 4 + 3] = tplNrmW[v] || 0;
 		padUv[v * 4 + 3] = tplUvW[v] || 0;

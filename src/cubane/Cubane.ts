@@ -915,44 +915,6 @@ export class Cubane {
 	 * @param useCache Whether to use cached meshes (default: true)
 	 * @returns Promise<THREE.Object3D> The entity mesh
 	 */
-
-	// Atlas remap for pure-entity blocks (astra chests-final consult): the GLTF models
-	// embed their own textures with [0,1] UVs — fine for CPU rendering, but the GPU
-	// record path samples ONE shared atlas, so un-remapped UVs sweep the whole atlas
-	// (black chests). If the entity's texture sheet is packed in the atlas, swap the
-	// material to the atlas and remap the geometry UVs into the sheet's rect — the
-	// same convention BlockMeshBuilder uses for block faces.
-	private atlasifyEntityMesh(mesh: THREE.Object3D, entityType: string): void {
-		const sheetOf: Record<string, string> = {
-			chest: "entity/chest/normal",
-			trapped_chest: "entity/chest/trapped",
-			ender_chest: "entity/chest/ender",
-		};
-		const path = sheetOf[entityType];
-		if (!path) return;
-		const atlasTex = this.assetLoader.getTextureAtlas?.();
-		const rect = this.assetLoader.getTextureUV?.(path);
-		if (!atlasTex || !rect) return;
-		const flippedV = 1 - rect.v - rect.height; // same convention as applyAtlasUVMapping
-		mesh.traverse((o: any) => {
-			if (!(o as any).isMesh) return;
-			const g = o.geometry as THREE.BufferGeometry;
-			const uvAttr = g.getAttribute("uv") as THREE.BufferAttribute | undefined;
-			const mat = Array.isArray(o.material) ? o.material[0] : o.material;
-			if (!uvAttr || !mat) return;
-			const uvArr = uvAttr.array as Float32Array;
-			for (let i = 0; i < uvArr.length; i += 2) {
-				uvArr[i] = rect.u + uvArr[i] * rect.width;
-				uvArr[i + 1] = flippedV + uvArr[i + 1] * rect.height;
-			}
-			uvAttr.needsUpdate = true;
-			mat.map = atlasTex;
-			mat.userData.atlasUV = rect;
-			mat.userData.useAtlas = true;
-			mat.needsUpdate = true;
-		});
-	}
-
 	public async getEntityMesh(
 		entityType: string,
 		useCache: boolean = true
@@ -982,13 +944,8 @@ export class Cubane {
 				return fallback;
 			}
 			mesh.name = `entity_${entityType}`;
-			// atlasifyEntityMesh DISABLED: the GLTF embedded texture layout ≠ pack sheet
-			// layout (UVs span a sub-region only) — remapping sampled wrong texels
-			// ('half a texture'). Correct fix is astra option (c): conventional-mesh
-			// fallback for entity blocks in the GPU path (next session, PIPELINE.md).
-
-			// Cache the mesh if caching is enabled (cache master holds the atlasified
-			// version so every consumer — CPU and GPU paths — shares the convention)
+			// Keep embedded entity textures: their UV layout differs from pack sheets.
+			// Cache a master clone for subsequent callers.
 			if (useCache) {
 				this.entityMeshCache.set(entityType, mesh.clone());
 			}

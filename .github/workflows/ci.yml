@@ -43,7 +43,7 @@ jobs:
         run: bun run typecheck
 
       - name: Type check (build config)
-        run: tsc --project tsconfig.build.json --noEmit
+        run: bun run typecheck:build
 
   test:
     name: Test

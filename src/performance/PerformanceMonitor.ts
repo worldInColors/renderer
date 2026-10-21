@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { MeshBuildingMode } from "../SchematicRendererOptions";
 
 export interface MemorySnapshot {
 	timestamp: number;
@@ -111,7 +112,7 @@ export interface MeshBuildingSession {
 	startTime: number;
 	endTime?: number;
 	totalDuration?: number;
-	renderMode: "immediate" | "incremental" | "instanced";
+	renderMode: MeshBuildingMode;
 
 	// Memory tracking
 	memorySnapshots: MemorySnapshot[];
@@ -190,17 +191,14 @@ export class PerformanceMonitor {
 		this.renderer = renderer;
 	}
 
-	public startSession(
-		schematicId: string,
-		renderMode: "immediate" | "incremental" | "instanced" | "batched"
-	): string {
+	public startSession(schematicId: string, renderMode: MeshBuildingMode): string {
 		const sessionId = `${schematicId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 		this.currentSession = {
 			sessionId,
 			schematicId,
 			startTime: performance.now(),
-			renderMode: renderMode as "immediate" | "incremental" | "instanced",
+			renderMode,
 			memorySnapshots: [],
 			peakMemoryUsage: 0,
 			memoryLeaks: 0,

@@ -51,6 +51,7 @@
 		"format": "prettier --write \"src/**/*.ts\"",
 		"format:check": "prettier --check \"src/**/*.ts\"",
 		"typecheck": "tsc --noEmit",
+		"typecheck:build": "tsc --project tsconfig.build.json --noEmit",
 		"prepare": "husky",
 		"watch-wasm": "node watch-wasm.js"
 	},

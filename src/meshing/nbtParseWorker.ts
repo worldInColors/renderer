@@ -12,10 +12,9 @@ self.onmessage = (e: MessageEvent) => {
 		const grid = (w as any).grid as Uint32Array;
 		const palette = (w as any).palette as any[];
 		const dims = w.get_dimensions();
-		(self as any).postMessage(
-			{ ok: true, grid, palette, sx: dims[0], sy: dims[1], sz: dims[2] },
-			[grid.buffer]
-		);
+		(self as any).postMessage({ ok: true, grid, palette, sx: dims[0], sy: dims[1], sz: dims[2] }, [
+			grid.buffer,
+		]);
 	} catch (err) {
 		(self as any).postMessage({ ok: false, error: String(err) });
 	}

@@ -530,7 +530,7 @@ export class WorldMeshBuilder {
 		try {
 			(window as any).__paletteDump = palette.map((entry: any, i: number) => ({
 				index: i,
-				name: entry?.name || '?',
+				name: entry?.name || "?",
 				properties: entry?.properties || {},
 			}));
 		} catch {}
@@ -599,8 +599,12 @@ export class WorldMeshBuilder {
 						const nrmArr = geometry.attributes.normal?.array;
 						let ny = 1;
 						if (nrmArr && nrmArr.length >= 3) {
-							let s = 0, n = 0;
-							for (let i = 1; i < nrmArr.length; i += 3) { s += Math.abs(nrmArr[i]); n++; }
+							let s = 0,
+								n = 0;
+							for (let i = 1; i < nrmArr.length; i += 3) {
+								s += Math.abs(nrmArr[i]);
+								n++;
+							}
 							ny = n ? s / n : 1;
 						}
 						const isSide = ny < 0.5;
@@ -623,11 +627,17 @@ export class WorldMeshBuilder {
 						// between water and blocks with otherwise identical settings.
 						fluid: material.userData.isWater
 							? "water"
-							: material.userData.isLava ? "lava" : undefined,
+							: material.userData.isLava
+								? "lava"
+								: undefined,
 					});
 				}
 
-				const category = this.getBlockCategory(blockState.name, blockState.properties, !fluidSurface);
+				const category = this.getBlockCategory(
+					blockState.name,
+					blockState.properties,
+					!fluidSurface
+				);
 
 				paletteBlockData[index] = {
 					blockName: blockState.name,
@@ -901,7 +911,8 @@ export class WorldMeshBuilder {
 			const w = window as any;
 			w.__meshHashes = w.__meshHashes || [];
 			for (const md of batchResult.meshes) {
-				const pos = md.positions, idx = md.indices;
+				const pos = md.positions,
+					idx = md.indices;
 				let h = 0x811c9dc5;
 				const tris: string[] = [];
 				for (let t = 0; t + 2 < idx.length; t += 3) {
@@ -909,21 +920,30 @@ export class WorldMeshBuilder {
 					for (let k = 0; k < 3; k++) {
 						const o = idx[t + k] * 3;
 						v.push(
-							Math.round((pos[o] ?? 0) * 1024) + ',' +
-							Math.round((pos[o + 1] ?? 0) * 1024) + ',' +
-							Math.round((pos[o + 2] ?? 0) * 1024));
+							Math.round((pos[o] ?? 0) * 1024) +
+								"," +
+								Math.round((pos[o + 1] ?? 0) * 1024) +
+								"," +
+								Math.round((pos[o + 2] ?? 0) * 1024)
+						);
 					}
 					v.sort();
-					tris.push(v.join(';'));
+					tris.push(v.join(";"));
 				}
 				tris.sort();
-				for (const t of tris) for (let c = 0; c < t.length; c++) {
-					h ^= t.charCodeAt(c); h = (h * 0x01000193) >>> 0;
-				}
+				for (const t of tris)
+					for (let c = 0; c < t.length; c++) {
+						h ^= t.charCodeAt(c);
+						h = (h * 0x01000193) >>> 0;
+					}
 				w.__meshHashes.push({ category: md.category, tris: tris.length, hash: h.toString(16) });
-				if (w.__gpuOracle) { (w.__cpuDump = w.__cpuDump || {})[md.category] = { posArr: pos, idxArr: idx }; }
+				if (w.__gpuOracle) {
+					(w.__cpuDump = w.__cpuDump || {})[md.category] = { posArr: pos, idxArr: idx };
+				}
 			}
-		} catch (e) { /* oracle must never break the build */ }
+		} catch (e) {
+			/* oracle must never break the build */
+		}
 
 		for (const meshData of batchResult.meshes) {
 			// OPTIMIZATION: Sort geometry by material index to minimize draw calls
@@ -1842,8 +1862,8 @@ export class WorldMeshBuilder {
 		// shared surface owns water, the host must draw BEFORE it; putting the host
 		// in the water pass lets transparent sorting paint it over the water.
 		if (
-			includesFluid && (properties?.waterlogged === "true" ||
-			WorldMeshBuilder.IMPLICIT_WATERLOGGED.has(blockName))
+			includesFluid &&
+			(properties?.waterlogged === "true" || WorldMeshBuilder.IMPLICIT_WATERLOGGED.has(blockName))
 		) {
 			return "water";
 		}
@@ -1886,12 +1906,7 @@ export class WorldMeshBuilder {
 		const inverseRoot = rootCubaneObject.matrixWorld.clone().invert();
 
 		rootCubaneObject.traverse((child) => {
-			if (
-				child instanceof THREE.Mesh &&
-				child.geometry &&
-				child.material &&
-				child.visible
-			) {
+			if (child instanceof THREE.Mesh && child.geometry && child.material && child.visible) {
 				const material = Array.isArray(child.material) ? child.material[0] : child.material;
 				if (!material || !(material instanceof THREE.Material)) return;
 

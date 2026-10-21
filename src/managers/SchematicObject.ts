@@ -16,6 +16,7 @@ import { SceneManager } from "./SceneManager";
 // Removed unused imports since we're no longer using reactive proxy
 import { resetPerformanceMetrics } from "../monitoring";
 import { SchematicRenderer } from "../SchematicRenderer";
+import type { MeshBuildingMode } from "../SchematicRendererOptions";
 import type { BlockData } from "../types";
 import { performanceMonitor } from "../performance/PerformanceMonitor";
 import { SchematicExporter } from "../export/SchematicExporter";
@@ -743,8 +744,7 @@ export class SchematicObject extends EventEmitter {
 			chunkHeight: 16,
 			chunkLength: 16,
 		},
-		buildMode: "immediate" | "incremental" | "instanced" | "batched" = this.schematicRenderer
-			.options.meshBuildingMode || "incremental"
+		buildMode: MeshBuildingMode = this.schematicRenderer.options.meshBuildingMode || "incremental"
 	) {
 		// Start performance monitoring session
 		const sessionId = performanceMonitor.startSession(this.id, buildMode);
@@ -1584,7 +1584,6 @@ export class SchematicObject extends EventEmitter {
 	 * record stream and renders it directly via WebGL2 vertex pulling (gl_VertexID) —
 	 * zero vertex-data readback. ~10x less data than the vertex path.
 	 */
-	private pendingLiquidTex: Array<{ mat: any; texName: string }> = [];
 
 	public async buildSchematicMeshesGpuPull(
 		schematicObject: any
@@ -1739,7 +1738,7 @@ export class SchematicObject extends EventEmitter {
 					.sort()
 					.map((k) => `${k}=${props[k]}`)
 					.join(",");
-				const state = c.block.split(/[;\[]/, 1)[0] + (pk ? `[${pk}]` : "");
+				const state = c.block.split(/[;[]/, 1)[0] + (pk ? `[${pk}]` : "");
 				if (!pk)
 					console.warn(
 						`[proto] empty props for ${c.block} @ ${c.x},${c.y},${c.z} — getBlockMesh will get a bare name`
@@ -1993,7 +1992,9 @@ export class SchematicObject extends EventEmitter {
 			}
 			if (fluid.bubbleCells.length) {
 				const { buildBubbleMesh } = await import("../meshing/BubbleColumns");
-				const texture = await this.schematicRenderer.cubane.getAssetLoader().getTexture("particle/bubble");
+				const texture = await this.schematicRenderer.cubane
+					.getAssetLoader()
+					.getTexture("particle/bubble");
 				this.bubbleMesh = buildBubbleMesh(fluid.bubbleCells, texture);
 				if (this.bubbleMesh) fluid.meshes.push(this.bubbleMesh);
 			}
@@ -2008,7 +2009,10 @@ export class SchematicObject extends EventEmitter {
 	}
 
 	/** Shared front half of the GPU build paths: palette precompute + grid extraction. */
-	private async extractGpuGrid(schematicObject: any, fluidSurface = false): Promise<{
+	private async extractGpuGrid(
+		schematicObject: any,
+		fluidSurface = false
+	): Promise<{
 		builder: any;
 		paletteData: any[];
 		materials: any[];
