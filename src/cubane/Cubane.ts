@@ -272,6 +272,11 @@ export class Cubane {
 			console.error("Error cleaning up expired resource packs:", error);
 		}
 	}
+	/** Wait for cached packs and their atlas to finish restoring. */
+	public async ready(): Promise<void> {
+		await this.initPromise;
+	}
+
 	public async loadResourcePack(
 		options: ResourcePackLoadOptions | Blob,
 		loader?: ResourcePackLoader
@@ -754,6 +759,15 @@ export class Cubane {
 			);
 			if (signMesh) return signMesh;
 			// Fall through to default handling if the sign couldn't be built.
+		}
+
+		if (/^minecraft:(chest|trapped_chest|ender_chest)$/.test(blockId)) {
+			const { buildChestBlockMesh } = await import("../meshing/ChestModels");
+			const chest = await buildChestBlockMesh(blockString, this.assetLoader);
+			if (chest) {
+				if (useCache) this.blockMeshCache.set(cacheKey, chest.clone());
+				return chest;
+			}
 		}
 
 		if (this.pureBlockEntityMap[blockId]) {

@@ -64,6 +64,7 @@
 					<h1 class="text-xl font-bold">Schematic Renderer - Playground</h1>
 				</div>
 				<div class="flex items-center space-x-2">
+					<span id="pack-status" class="text-xs text-gray-300">Loading textures…</span>
 					<button
 						class="btn btn-sm btn-primary"
 						@click="addSchematic"
@@ -125,8 +126,10 @@
 		<!-- Alpine.js Script -->
 		<script>
 			function rendererUI() {
+				// Three.js objects must stay outside Alpine's deeply reactive state.
+				// Proxying their non-configurable matrices breaks rendering during file loads.
+				let renderer = null;
 				return {
-					renderer: null,
 					cameraPosition: { x: 0.0, y: 0.0, z: 0.0 },
 					schematics: [],
 					showSidebar: true,
@@ -153,11 +156,11 @@
 						document
 							.getElementById("canvas")
 							.addEventListener("rendererInitialized", () => {
-								this.renderer =
+								renderer =
 									document.getElementById("canvas").schematicRenderer;
 
 								// Ensure the renderer is initialized
-								if (!this.renderer) {
+								if (!renderer) {
 									console.warn(
 										"Renderer not initialized attempting to retrieve"
 									);
@@ -183,13 +186,13 @@
 									}
 								};
 
-								this.renderer.cameraManager.on(
+								renderer.cameraManager.on(
 									"propertyChanged",
 									updateCameraPosition
 								);
 
 								// Initialize with current camera position
-								const initialPosition = this.renderer.cameraManager.position;
+								const initialPosition = renderer.cameraManager.position;
 								this.cameraPosition = {
 									x: initialPosition?.x.toFixed(2),
 									y: initialPosition?.y.toFixed(2),
@@ -200,14 +203,14 @@
 								this.updateSchematicsList();
 
 								// Listen for changes in the schematics
-								this.renderer.schematicManager.eventEmitter.on(
+								renderer.schematicManager.eventEmitter.on(
 									"schematicAdded",
 									() => {
 										this.updateSchematicsList();
 									}
 								);
 
-								this.renderer.schematicManager.eventEmitter.on(
+								renderer.schematicManager.eventEmitter.on(
 									"schematicRemoved",
 									() => {
 										this.updateSchematicsList();
@@ -218,7 +221,7 @@
 								this.updateResourcePacksList();
 
 								// Update schematic visibility when changed externally
-								this.renderer.schematicManager.eventEmitter.on(
+								renderer.schematicManager.eventEmitter.on(
 									"schematicPropertyChanged",
 									({ schematic, property, value }) => {
 										if (property === "visible") {
@@ -234,13 +237,13 @@
 							});
 					},
 					updateResourcePacksList() {
-						this.renderer.resourcePackManager.listPacks().then((packs) => {
+						renderer.resourcePackManager.listPacks().then((packs) => {
 							this.resourcePacks = packs;
 						});
 					},
 					downloadSchematic(schematic) {
 						// Assume the schematic object has a reference to the file Blob
-						this.renderer.schematicManager
+						renderer.schematicManager
 							.exportSchematic(schematic.id)
 							.then((blob) => {
 								const url = URL.createObjectURL(blob);
@@ -267,7 +270,7 @@
 							const file = event.target.files[0];
 							if (file) {
 								try {
-									await this.renderer.resourcePackManager.uploadPack(file);
+									await renderer.resourcePackManager.uploadPack(file);
 									this.updateResourcePacksList();
 								} catch (error) {
 									console.error("Failed to upload resource pack:", error);
@@ -303,12 +306,12 @@
 							});
 					},
 					updateSchematicsList() {
-						if (!this.renderer) {
+						if (!renderer) {
 							console.warn("Renderer not initialized");
 							return;
 						}
 						const schematicObjects = Array.from(
-							this.renderer.schematicManager.schematics.values()
+							renderer.schematicManager.schematics.values()
 						);
 						this.schematics = schematicObjects.map((schematic) => ({
 							id: schematic.id,
@@ -318,14 +321,14 @@
 					},
 					toggleSchematicVisibility(schematic) {
 						const rendererSchematic =
-							this.renderer.schematicManager.schematics.get(schematic.id);
+							renderer.schematicManager.schematics.get(schematic.id);
 						if (rendererSchematic) {
 							rendererSchematic.visible = !rendererSchematic.visible;
 							schematic.visible = rendererSchematic.visible;
 						}
 					},
 					addSchematic() {
-						if (!this.renderer) {
+						if (!renderer) {
 							console.warn("Renderer not initialized");
 							return;
 						}
@@ -339,7 +342,7 @@
 							const file = event.target.files[0];
 							if (file) {
 								try {
-									await this.renderer.schematicManager.loadSchematicFromFile(
+									await renderer.schematicManager.loadSchematicFromFile(
 										file
 									);
 									// Update the schematics list
@@ -354,42 +357,42 @@
 						input.click();
 					},
 					toggleGrid() {
-						if (!this.renderer) {
+						if (!renderer) {
 							console.warn("Renderer not initialized");
 							return;
 						}
-						this.renderer.sceneManager.showGrid =
-							!this.renderer.sceneManager.showGrid;
+						renderer.sceneManager.showGrid =
+							!renderer.sceneManager.showGrid;
 					},
 					toggleAxes() {
-						if (!this.renderer) {
+						if (!renderer) {
 							console.warn("Renderer not initialized");
 							return;
 						}
-						this.renderer.sceneManager.showAxes =
-							!this.renderer.sceneManager.showAxes;
+						renderer.sceneManager.showAxes =
+							!renderer.sceneManager.showAxes;
 					},
 					resetScene() {
-						if (!this.renderer) {
+						if (!renderer) {
 							console.warn("Renderer not initialized");
 							return;
 						}
 						// Implement scene reset logic here
-						this.renderer.resetScene();
+						renderer.resetScene();
 					},
 					toggleWireframe() {
-						if (!this.renderer) {
+						if (!renderer) {
 							console.warn("Renderer not initialized");
 							return;
 						}
-						this.renderer.toggleWireframeMode();
+						renderer.toggleWireframeMode();
 					},
 					toggleShadows() {
-						if (!this.renderer) {
+						if (!renderer) {
 							console.warn("Renderer not initialized");
 							return;
 						}
-						this.renderer.toggleShadows();
+						renderer.toggleShadows();
 					},
 					openBackgroundColorPicker() {
 						// Create an input element dynamically
@@ -399,7 +402,7 @@
 
 						input.onchange = (event) => {
 							const color = event.target.value;
-							this.renderer.sceneManager.setBackgroundColor(color);
+							renderer.sceneManager.setBackgroundColor(color);
 						};
 
 						// Trigger the color picker
@@ -407,25 +410,25 @@
 					},
 
 					resetCamera() {
-						if (!this.renderer) {
+						if (!renderer) {
 							console.warn("Renderer not initialized");
 							return;
 						}
-						this.renderer.cameraManager.focusOnSchematics();
+						renderer.cameraManager.focusOnSchematics();
 					},
 					switchToPerspective() {
-						if (!this.renderer) {
+						if (!renderer) {
 							console.warn("Renderer not initialized");
 							return;
 						}
-						this.renderer.cameraManager.activeCamera.changeType("perspective");
+						renderer.cameraManager.activeCamera.changeType("perspective");
 					},
 					switchToOrthographic() {
-						if (!this.renderer) {
+						if (!renderer) {
 							console.warn("Renderer not initialized");
 							return;
 						}
-						this.renderer.cameraManager.activeCamera.changeType("orthographic");
+						renderer.cameraManager.activeCamera.changeType("orthographic");
 					},
 					toggleFullScreen() {
 						const elem = document.documentElement;
@@ -440,12 +443,12 @@
 						}
 					},
 					takeScreenshot() {
-						if (!this.renderer) {
+						if (!renderer) {
 							console.warn("Renderer not initialized");
 							return;
 						}
 
-						this.renderer.captureScreenshot({
+						renderer.captureScreenshot({
 							format: "image/png",
 							quality: 1,
 							callback: (blob) => {
@@ -461,7 +464,7 @@
 						});
 					},
 					startVideoRecording() {
-						if (!this.renderer) {
+						if (!renderer) {
 							console.warn("Renderer not initialized");
 							return;
 						}
@@ -470,7 +473,7 @@
 							console.warn("Recording is already in progress.");
 							return;
 						}
-						this.renderer.cameraManager.cameraPathManager.fitCircularPathToSchematics(
+						renderer.cameraManager.cameraPathManager.fitCircularPathToSchematics(
 							"circularPath"
 						);
 
@@ -478,15 +481,15 @@
 						const duration = this.cameraPathParams.orbitTime || 5;
 
 						// Hide UI elements during recording
-						this.renderer.cameraManager.cameraPathManager.hidePathVisualization(
+						renderer.cameraManager.cameraPathManager.hidePathVisualization(
 							"circularPath"
 						);
-						this.renderer.sceneManager.showAxes = false;
-						//this.renderer.sceneManager.showGrid = false;
+						renderer.sceneManager.showAxes = false;
+						//renderer.sceneManager.showGrid = false;
 						this.showCameraControls = false;
 
 						// Start recording
-						this.renderer.cameraManager.recordingManager
+						renderer.cameraManager.recordingManager
 							.startRecording(duration, {
 								width: 1920,
 								height: 1080,
@@ -513,7 +516,7 @@
 
 									// Restore UI elements
 									if (this.showCameraControls) {
-										this.renderer.cameraManager.cameraPathManager.showPathVisualization(
+										renderer.cameraManager.cameraPathManager.showPathVisualization(
 											"circularPath"
 										);
 									}
@@ -526,7 +529,7 @@
 
 								// Restore UI elements
 								if (this.showCameraControls) {
-									this.renderer.cameraManager.cameraPathManager.showPathVisualization(
+									renderer.cameraManager.cameraPathManager.showPathVisualization(
 										"circularPath"
 									);
 								}
@@ -538,18 +541,18 @@
 
 					// Optional: You can also update the toggleCameraAnimation function to show how to animate without recording
 					toggleCameraAnimation() {
-						if (!this.renderer) {
+						if (!renderer) {
 							console.warn("Renderer not initialized");
 							return;
 						}
 
 						if (this.isAnimating) {
 							// Stop the animation
-							this.renderer.cameraManager.stopAnimation();
+							renderer.cameraManager.stopAnimation();
 							this.isAnimating = false;
 						} else {
 							// Start the animation without recording
-							this.renderer.cameraManager.animateCameraAlongPath({
+							renderer.cameraManager.animateCameraAlongPath({
 								duration: this.cameraPathParams.orbitTime,
 								lookAtTarget: true,
 								updateControls: true,
@@ -564,12 +567,12 @@
 						}
 					},
 					updateCameraPathParameters() {
-						if (!this.renderer) {
+						if (!renderer) {
 							console.warn("Renderer not initialized");
 							return;
 						}
 						// Call the renderer method to update camera path parameters
-						this.renderer.cameraManager.cameraPathManager.updatePathParameters(
+						renderer.cameraManager.cameraPathManager.updatePathParameters(
 							"circularPath",
 							{
 								height: this.cameraPathParams.height,

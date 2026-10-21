@@ -359,8 +359,9 @@ export class BlockMeshBuilder {
 		>();
 
 		// Process each face using the SAME logic as the working original
-		for (const [direction, faceData] of Object.entries(element.faces)) {
-			if (!faceData) continue;
+		for (const [direction, sourceFace] of Object.entries(element.faces)) {
+			if (!sourceFace) continue;
+			const faceData = this.withDefaultUV(sourceFace, element, direction);
 
 			// Create a temporary PlaneGeometry to get the correct vertex positions and UVs
 			const tempFaceResult = await this.createTempFaceGeometry(
@@ -756,10 +757,6 @@ export class BlockMeshBuilder {
 		transform: { x?: number; y?: number; uvlock?: boolean },
 		texturePath?: string
 	): void {
-		if (!faceData.uv) {
-			faceData.uv = [0, 0, 16, 16];
-		}
-
 		const uvAttribute = geometry.attributes.uv as THREE.BufferAttribute;
 		const [uMinPx, vMinPx, uMaxPx, vMaxPx] = faceData.uv;
 
@@ -823,6 +820,25 @@ export class BlockMeshBuilder {
 		// Set the UVs (these are still in local 0-1 space, will be transformed to atlas space later)
 		uvAttribute.array.set(uvCoords);
 		uvAttribute.needsUpdate = true;
+	}
+
+	/** Minecraft projects omitted UVs from the element's bounds, at 16 pixels/block. */
+	private withDefaultUV(face: any, element: BlockModelElement, direction: string): any {
+		if (face.uv) return face;
+		const [x0, y0, z0] = element.from;
+		const [x1, y1, z1] = element.to;
+		let uv: number[];
+		switch (direction) {
+			case "down": uv = [x0, 16 - z1, x1, 16 - z0]; break;
+			case "up": uv = [x0, z0, x1, z1]; break;
+			case "north": uv = [16 - x1, 16 - y1, 16 - x0, 16 - y0]; break;
+			case "south": uv = [x0, 16 - y1, x1, 16 - y0]; break;
+			case "west": uv = [z0, 16 - y1, z1, 16 - y0]; break;
+			case "east": uv = [16 - z1, 16 - y1, 16 - z0, 16 - y0]; break;
+			default: throw new Error(`Unknown face direction: ${direction}`);
+		}
+		// Models are cached: never write generated UVs back into the source face.
+		return { ...face, uv };
 	}
 
 	/**
@@ -909,8 +925,9 @@ export class BlockMeshBuilder {
 		const faceDirections = ["down", "up", "north", "south", "west", "east"] as const;
 
 		for (const direction of faceDirections) {
-			const faceData = element.faces[direction];
-			if (!faceData) continue;
+			const sourceFace = element.faces[direction];
+			if (!sourceFace) continue;
+			const faceData = this.withDefaultUV(sourceFace, element, direction);
 
 			// Create the face geometry (reuse existing logic)
 			const { geometry, material } = await this.createFaceGeometry(
@@ -1213,13 +1230,14 @@ export class BlockMeshBuilder {
 	private isLiquidBlock(blockData?: Block): boolean {
 		if (!blockData) return false;
 		const blockId = `${blockData.namespace}:${blockData.name}`;
-		return blockId === "minecraft:water" || blockId === "minecraft:lava";
+		return this.isWaterBlock(blockData) || blockId === "minecraft:lava";
 	}
 
 	private isWaterBlock(blockData?: Block): boolean {
 		if (!blockData) return false;
 
-		return `${blockData.namespace}:${blockData.name}` === "minecraft:water";
+		const blockId = `${blockData.namespace}:${blockData.name}`;
+		return blockId === "minecraft:water" || blockId === "minecraft:bubble_column";
 	}
 
 	// Blocks that are implicitly waterlogged in vanilla — they hold water without
@@ -1230,7 +1248,6 @@ export class BlockMeshBuilder {
 		"minecraft:kelp_plant",
 		"minecraft:seagrass",
 		"minecraft:tall_seagrass",
-		"minecraft:bubble_column",
 	]);
 
 	private isWaterlogged(blockData?: Block): boolean {

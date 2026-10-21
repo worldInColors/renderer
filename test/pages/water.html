@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Water rendering regression scene</title>
+		<style>
+			body {
+				margin: 0;
+				background: #10151f;
+				color: #eef3fa;
+				font: 14px system-ui;
+			}
+			header {
+				position: absolute;
+				top: 18px;
+				left: 20px;
+				z-index: 1;
+				max-width: 600px;
+			}
+			h1 {
+				font-size: 20px;
+				margin: 0 0 8px;
+			}
+			p {
+				margin: 6px 0;
+			}
+			button {
+				padding: 7px 12px;
+				margin: 8px 4px 0 0;
+			}
+			canvas {
+				display: block;
+			}
+			#status {
+				font-family: monospace;
+			}
+		</style>
+	</head>
+	<body>
+		<header>
+			<h1>Water and waterlogged blocks</h1>
+			<p>Pool, stairs, slab, fence and waterfall. Drag to orbit; scroll to zoom.</p>
+			<button id="front">Front</button><button id="above">Above</button
+			><button id="below">Below</button><button id="toggle">Toggle water</button>
+			<p id="status">Loading resource-pack textures…</p>
+		</header>
+		<script type="module" src="./scripts/water.ts"></script>
+	</body>
+</html>

@@ -12,6 +12,7 @@ import { RenderLoopScheduler } from "./utils/renderLoopScheduler";
 import { SchematicManager, SchematicManagerOptions } from "./managers/SchematicManager";
 import { WorldMeshBuilder } from "./WorldMeshBuilder";
 import { MaterialRegistry } from "./MaterialRegistry";
+import { initializeResourcePacks } from "./utils/initializeResourcePacks";
 import { EventEmitter } from "events";
 import { ResourcePackManager, DefaultPackCallback } from "./managers/ResourcePackManager";
 import { ResourcePackManagerProxy } from "./managers/ResourcePackManagerProxy";
@@ -49,6 +50,7 @@ import { RegionManager } from "./managers/RegionManager";
 import { RegionInteractionHandler } from "./managers/highlight/RegionInteractionHandler";
 
 export class SchematicRenderer {
+	private resourcePacksInitialized = false;
 	public canvas: HTMLCanvasElement;
 	public timer: THREE.Timer;
 	public options: SchematicRendererOptions;
@@ -295,6 +297,7 @@ export class SchematicRenderer {
 				? Promise.resolve()
 				: this.initializeResourcePacks(defaultResourcePacks);
 			await Promise.all([wasmReady, packsReady]);
+			this.resourcePacksInitialized = true;
 			this.updateMissingPackNotice();
 
 			// Step 4: Initialize builders and managers
@@ -531,6 +534,8 @@ export class SchematicRenderer {
 		// Set atlas rebuild callback to reload resources
 		// This is called when packs are toggled/changed, so always force reload
 		this.resourcePackManager.setAtlasRebuildCallback(async () => {
+			// Initial defaults are reconciled in one batch after cache restoration.
+			if (!this.resourcePacksInitialized) return;
 			console.log("[SchematicRenderer] Atlas rebuild callback invoked - forcing reload");
 			await this.reloadResourcePacksIntoCubane(true); // Force reload when packs change
 		});
@@ -658,49 +663,16 @@ export class SchematicRenderer {
 	private async initializeResourcePacks(
 		defaultResourcePacks?: Record<string, DefaultPackCallback>
 	): Promise<void> {
-		await this.resourcePackManager.initPromise;
-
-		// Check if Cubane already has packs loaded (from auto-restore)
-		const cubanePackCount = this.cubane.getPackCount?.() ?? 0;
-		if (cubanePackCount > 0) {
-			return;
-		}
-
-		// Get resource pack blobs from your existing system
-		const resourcePackBlobs = await this.resourcePackManager.getResourcePackBlobs(
-			defaultResourcePacks || {}
+		this.options.resourcePackBlobs = await initializeResourcePacks(
+			this.cubane, this.resourcePackManager, defaultResourcePacks
 		);
-
-		if (resourcePackBlobs.length === 0) {
+		if (this.cubane.getPackCount() === 0) {
 			console.info(
 				"[SchematicRenderer] No resource pack loaded — blocks will render with " +
 					"placeholder textures.\n  Add one with `renderer.addResourcePack(file)` " +
 					"or drop a Minecraft resource pack (.zip) onto the canvas."
 			);
-			return;
 		}
-
-		console.log(`[SchematicRenderer] Loading ${resourcePackBlobs.length} resource pack(s)...`);
-
-		// Use batch mode to load all packs at once (single atlas rebuild at the end)
-		this.cubane.beginPackBatchUpdate();
-
-		try {
-			for (let i = 0; i < resourcePackBlobs.length; i++) {
-				const blob = resourcePackBlobs[i];
-				try {
-					await this.cubane.loadResourcePack(blob as Blob);
-				} catch (error) {
-					console.error(`Failed to load resource pack ${i + 1}:`, error);
-				}
-			}
-		} finally {
-			// End batch mode - triggers single atlas rebuild with all packs
-			await this.cubane.endPackBatchUpdate();
-		}
-
-		// Store the blobs for backward compatibility if needed
-		this.options.resourcePackBlobs = resourcePackBlobs;
 	}
 
 	private lastFrameTime = 0;
@@ -711,6 +683,8 @@ export class SchematicRenderer {
 	// without redrawing every vsync. The actual redraw only happens on a frame flip.
 	private readonly animatedPollFps = 20;
 	private enableAnimatedTextures: boolean;
+	private particleFrustum = new THREE.Frustum();
+	private particleProjection = new THREE.Matrix4();
 	private frameInterval: number;
 	// Owns the rAF/idle-poll handles and the re-arm logic. Clearing the spent frame
 	// handle each tick (beginTick) is what lets invalidate() wake the loop after it
@@ -943,10 +917,28 @@ export class SchematicRenderer {
 		// Decide whether to render: the FPS cap must allow it AND the scene must be
 		// dirty or continuously animating.
 		const elapsed = now - this.lastFrameTime;
+		let particlesAnimating = false;
+		let particleFrustumReady = false;
+		for (const schematic of this.schematicManager?.schematics.values() ?? []) {
+			if (schematic.hasAnimatedParticles) {
+				if (!particleFrustumReady) {
+					camera.updateMatrixWorld();
+					this.particleProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+					this.particleFrustum.setFromProjectionMatrix(this.particleProjection, camera.coordinateSystem);
+					particleFrustumReady = true;
+				}
+				if (schematic.hasParticlesInView(this.particleFrustum)) {
+					particlesAnimating = true;
+					break;
+				}
+			}
+		}
 		const fpsAllows = this.frameInterval === 0 || elapsed >= this.frameInterval;
 		const wantsRender = shouldRenderFrame({
 			needsRender: this.needsRender,
 			continuous: this.continuous,
+			particlesAnimating,
+			elapsedMs: elapsed,
 		});
 		const shouldRender = fpsAllows && wantsRender;
 
@@ -956,7 +948,7 @@ export class SchematicRenderer {
 		// invalidate() cancels the poll and wakes us instantly on any real change, so
 		// the idle poll is just a backstop. `wantsRender` (not `shouldRender`) drives
 		// the choice so an fps-capped-but-dirty frame still reschedules promptly.
-		const schedule = pickFrameSchedule({ wantsRender, texturesAnimating });
+		const schedule = pickFrameSchedule({ wantsRender, texturesAnimating: texturesAnimating || particlesAnimating });
 		if (schedule === "raf") {
 			this.loop.requestFrame();
 		} else {

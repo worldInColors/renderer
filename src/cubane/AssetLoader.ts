@@ -5,6 +5,7 @@ import { TintManager } from "./TintManager";
 import { BlockModel, BlockStateDefinition } from "./types";
 import { AtlasBuilder } from "./AtlasBuilder";
 import { ResourcePackManager } from "./ResourcePackManager";
+import { createWaterFrameTexture, tintWaterPixels, WATER_OPACITY } from "../meshing/WaterTextures";
 
 export class AssetLoader {
 	private resourcePacks: Map<string, JSZip> = new Map();
@@ -270,7 +271,13 @@ export class AssetLoader {
 		}
 
 		// Load from resource pack
-		const jsonString = await this.getResourceString(`blockstates/${blockId}.json`);
+		let jsonString = await this.getResourceString(`blockstates/${blockId}.json`);
+		// The iron chain was renamed; prefer the pack's exact state, then its
+		// equivalent from the other naming era. Models/textures keep their pack paths.
+		if (!jsonString && (blockId === "iron_chain" || blockId === "chain")) {
+			const alias = blockId === "iron_chain" ? "chain" : "iron_chain";
+			jsonString = await this.getResourceString(`blockstates/${alias}.json`);
+		}
 		if (!jsonString) {
 			console.warn(`Block state definition for ${blockId} not found.`);
 			return {} as BlockStateDefinition;
@@ -839,19 +846,8 @@ export class AssetLoader {
 			return this.materialCache.get(cacheKey)!;
 		}
 
-		// Handle special paths for liquids.
-		// ONE texture for ALL water faces (*_still): mixing still tops with flow
-		// sides made camera pitch change the visible pattern mix — the user read it
-		// as water "changing color when looking up/down". Sides still ANIMATE as
-		// flowing (the record path picks cycle-vs-scroll by face NORMAL, not by
-		// texture), and both strips are per-frame normalized to identical
-		// luminance/alpha anyway.
-		let finalTexturePath = texturePath;
-		if (options.isWater) {
-			finalTexturePath = "block/water_still";
-		} else if (options.isLava) {
-			finalTexturePath = "block/lava_still";
-		}
+		// Keep the supplied still/flow water texture; waterfall sides use water_flow.
+		const finalTexturePath = options.isLava ? "block/lava_still" : texturePath;
 
 		let texture: THREE.Texture;
 		let atlasUVData: {
@@ -975,7 +971,7 @@ export class AssetLoader {
 			materialOptions.side = THREE.FrontSide;
 
 			if (options.isWater) {
-				materialOptions.opacity = 0.8;
+				materialOptions.opacity = options.opacity ?? WATER_OPACITY;
 			} else if (options.isLava) {
 				materialOptions.opacity = 0.9;
 				materialOptions.emissive = new THREE.Color(0x331100);
@@ -1000,7 +996,8 @@ export class AssetLoader {
 			if (usingAtlas) {
 				material.userData.tint = options.tint;
 			}
-			material.color = options.tint;
+			// Water in the atlas is already tinted; avoid multiplying the blue twice.
+			if (!options.isWater || !usingAtlas) material.color = options.tint;
 		}
 
 		// Liquid-specific userData
@@ -1314,15 +1311,8 @@ export class AssetLoader {
 						const blob = await this.getResourceBlob(`textures/${path}.png`);
 						if (!blob) return null;
 
-						// Use createImageBitmap for faster decoding (off main thread).
-						// ANIMATED STRIPS (water_still 16x512, water_flow 32x1024, ...)
-						// pack WHOLE — the record path animates them by sliding V down
-						// the strip (materials keep frame-0-clamped atlasUVs; mips at
-						// LOD<=4 stay inside one 16px frame). WATER TINT: vanilla water
-						// textures are GRAYSCALE masks the game tints blue at render
-						// time; multiply grayscale water masks by the tint at pack time
-						// (middle-dark tone per user preference — brighter than vanilla
-						// #3F76E4 reads washed out under our unlit water shading).
+						// Keep the full animation strip in the atlas and harvest repeatable
+						// water frames for the surface shader. Preserve native color/alpha.
 						const image = await createImageBitmap(blob);
 						if (/^block\/(water|lava)_/.test(path)) {
 							const isWater = path.includes("water");
@@ -1330,9 +1320,20 @@ export class AssetLoader {
 							c.width = image.width;
 							c.height = image.height;
 							const cx = c.getContext("2d", { willReadFrequently: true });
+							if (!cx) return { path, image };
 							cx.drawImage(image, 0, 0);
 							const id = cx.getImageData(0, 0, c.width, c.height);
 							const d = id.data;
+							if (isWater) {
+								tintWaterPixels(d);
+								cx.putImageData(id, 0, 0);
+								const frames = createWaterFrameTexture(d, c.width, c.height);
+								const { liquidFrameTextures } = await import("../meshing/RecordRenderer");
+								liquidFrameTextures[path.endsWith("_flow") ? "waterFlow" : "water"] = frames;
+								const tinted = await createImageBitmap(c);
+								image.close?.();
+								return { path, image: tinted };
+							}
 							let mono = true;
 							for (let i = 0; i < d.length; i += 4) {
 								if (Math.abs(d[i] - d[i + 1]) > 8 || Math.abs(d[i + 1] - d[i + 2]) > 8) {
@@ -1341,21 +1342,11 @@ export class AssetLoader {
 								}
 							}
 							if (mono) {
-								// packs with their own colors (e.g. blue-water packs) keep them.
-								// PER-FRAME normalization: each animation frame is scaled to the
-								// SAME average luminance, and alpha variation is compressed toward
-								// one global average. Whole-strip averaging left per-frame
-								// brightness/alpha variation, which read as water changing
-								// color/brightness between faces (still vs flow), over time
-								// (frame cycling), and with angle (LOD averages).
-								const fw = image.width; // frame size (square frames stacked vertically)
-								const t = isWater ? [63, 118, 228] : [255, 255, 255]; // vanilla #3F76E4 — the old darker #2F58AB read near-black under the shader's contrast target
+								// Keep the existing grayscale-lava normalization. Water was
+								// handled above with its original alpha and animation contrast.
+								const fw = image.width;
+								const t = [255, 255, 255];
 								const TARGET_L = 0.72 * 255;
-								// ONE fixed alpha for ALL liquid strips. OPAQUE: translucent water
-								// blends over whatever is behind each face, so the backdrop (dark
-								// shaft interior vs sky vs stone) shifted the perceived water color
-								// with every view angle — the user's recurring "water changes
-								// color". The tint + animation carry the water look instead.
 								const GLOBAL_A = 255;
 								for (let fy = 0; fy + fw <= c.height; fy += fw) {
 									let lsum = 0,
@@ -1388,7 +1379,7 @@ export class AssetLoader {
 								// (fable): one array LAYER per animation frame with hardware
 								// RepeatWrapping — the record shader samples water by world
 								// coordinates with zero risk of atlas bleed/gutter/neighbours.
-								if (path === "block/water_still" || path === "block/lava_still") {
+								if (path === "block/lava_still") {
 									const frames = Math.floor(c.height / fw);
 									if (frames > 1) {
 										const layer = new Uint8Array(fw * fw * 4 * frames);
@@ -1420,7 +1411,7 @@ export class AssetLoader {
 										try {
 											// late import avoids a cubane -> meshing cycle at module load
 											const reg = await import("../meshing/RecordRenderer");
-											reg.liquidFrameTextures[path.includes("lava") ? "lava" : "water"] = arrTex;
+											reg.liquidFrameTextures.lava = arrTex;
 										} catch {
 											/* registry unavailable — atlas strip path still works */
 										}

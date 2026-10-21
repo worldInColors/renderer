@@ -31,6 +31,15 @@ export class SchematicObject extends EventEmitter {
 	public schematicWrapper: SchematicWrapper;
 	private schematicRenderer: SchematicRenderer;
 	private meshes: THREE.Mesh[] = [];
+	private bubbleMesh: THREE.Mesh | null = null;
+
+	public get hasAnimatedParticles(): boolean {
+		return this.visible && !!this.bubbleMesh?.visible && this.bubbleMesh.parent === this.group;
+	}
+
+	public hasParticlesInView(frustum: THREE.Frustum): boolean {
+		return this.hasAnimatedParticles && frustum.intersectsObject(this.bubbleMesh!);
+	}
 
 	private worldMeshBuilder: WorldMeshBuilder;
 	private eventEmitter: EventEmitter;
@@ -505,6 +514,9 @@ export class SchematicObject extends EventEmitter {
 								// Otherwise, let the material keep its original opacity.
 								if (schematicWantsFade) {
 									mat.opacity = this.opacity;
+								}
+								if (mat instanceof THREE.ShaderMaterial && mat.userData.fluidAlpha !== undefined) {
+									mat.uniforms.uAlpha.value = mat.userData.fluidAlpha * this.opacity;
 								}
 
 								// CRITICAL FIX: Only set transparent = true if the schematic
@@ -1578,68 +1590,19 @@ export class SchematicObject extends EventEmitter {
 		schematicObject: any
 	): Promise<{ meshes: any[]; chunkMap: Map<string, any[]> }> {
 		// reuse the GPU path's extraction up to the build, then swap the builder call
-		const gpuResult = await this.extractGpuGrid(schematicObject);
+		const gpuResult = await this.extractGpuGrid(schematicObject, true);
 		const { builder, paletteData, materials, grid, sx, sy, sz } = gpuResult;
+		const { withoutFluidGeometry } = await import("../meshing/FluidGeometry");
 		let entityCells = gpuResult.entityCells;
 		const { meshes } = await builder.buildRecordMeshes(
 			grid,
 			sx,
 			sy,
 			sz,
-			paletteData,
+			withoutFluidGeometry(paletteData),
 			() => materials
 		);
-		// ===== fluid surface (WaterMesher, fable): vanilla corner heights,
-		// world-space UVs, two-phase flow mapping, contrast recovery =====
-		try {
-			const { buildFluidMeshes, updateFluidTime, setFluidTextures } =
-				await import("../meshing/WaterMesher");
-			try {
-				// the frame array registry is a module export, not a global — hand it
-				// to the fluid material factory explicitly
-				const { liquidFrameTextures } = await import("../meshing/RecordRenderer");
-				setFluidTextures(liquidFrameTextures);
-			} catch {
-				/* tryBind falls back lazily */
-			}
-			const fluid = buildFluidMeshes(
-				(x: number, y: number, z: number) => {
-					try {
-						// FULL state (method call — detaching the wasm method breaks `this`):
-						// get_block returns bare names, which hides waterlogged=true and
-						// level=N — the fluid classifier needs both
-						const w = schematicObject.schematicWrapper;
-						let s = w.get_block(x, y, z) || "";
-						if (s && !s.includes("[")) {
-							const bp = w.get_block_with_properties?.(x, y, z);
-							const pr = bp?.properties?.();
-							if (pr && Object.keys(pr).length) {
-								s += `[${Object.keys(pr)
-									.sort()
-									.map((k) => `${k}=${pr[k]}`)
-									.join(",")}]`;
-							}
-						}
-						return s;
-					} catch {
-						return "";
-					}
-				},
-				sx,
-				sy,
-				sz
-			);
-			for (const fm of fluid.meshes) {
-				fm.userData.fluidMesh = true;
-				fm.onBeforeRender = () => updateFluidTime(performance.now() / 1000);
-				this.group.add(fm);
-			}
-			console.log(
-				`[FluidMesh] ${fluid.cells.toLocaleString()} fluid cells → ${fluid.meshes.length} meshes in ${fluid.ms.toFixed(0)}ms`
-			);
-		} catch (e) {
-			console.warn("[FluidMesh] failed, fluids will not render:", e);
-		}
+		meshes.push(...(await this.buildFluidSurface(schematicObject)));
 		// ===== entity fallback — astra-written bake normalization (no runtime matrices) =====
 		// 1) bake every GLTF part's transform into cloned geometry
 		// 2) normalize the combined bbox to the cell (x/z centered at 0.5, y from 0)
@@ -1887,6 +1850,11 @@ export class SchematicObject extends EventEmitter {
 					sin = Math.sin(ang);
 				const im = new THREE.Matrix4();
 				for (const part of parts) {
+					const partMaterials = Array.isArray(part.m) ? part.m : [part.m];
+					if (partMaterials.some((material: THREE.Material) => material.userData?.isWater)) {
+						part.g.dispose();
+						continue; // waterlogged entities get water from the shared fluid surface
+					}
 					part.g.translate(corr.x, corr.y, corr.z);
 					let g = part.g;
 					if (bucket.double && !part.latch) {
@@ -1988,8 +1956,93 @@ export class SchematicObject extends EventEmitter {
 		return { meshes, chunkMap: new Map() };
 	}
 
+	/** One shared surface pass for both the GPU-pull and batched CPU paths. */
+	private async buildFluidSurface(schematicObject: SchematicObject): Promise<THREE.Mesh[]> {
+		this.bubbleMesh = null;
+		try {
+			const { buildFluidMeshes, setFluidTextures, hasFluid } =
+				await import("../meshing/WaterMesher");
+			const palette = this.getPalettes(schematicObject.schematicWrapper).default;
+			if (
+				!palette.some((entry: any) => {
+					const props = entry.properties || {};
+					return hasFluid(
+						`${entry.name || entry.Name}[${Object.entries(props)
+							.map(([k, v]) => `${k}=${v}`)
+							.join(",")}]`
+					);
+				})
+			)
+				return [];
+			const [sx, sy, sz] = schematicObject.schematicWrapper.get_dimensions();
+			const bounds = schematicObject.renderingBounds;
+			try {
+				// the frame array registry is a module export, not a global — hand it
+				// to the fluid material factory explicitly
+				const { liquidFrameTextures } = await import("../meshing/RecordRenderer");
+				setFluidTextures(liquidFrameTextures);
+			} catch {
+				/* tryBind falls back lazily */
+			}
+			const fluid = buildFluidMeshes(
+				(x: number, y: number, z: number) => {
+					if (this.hiddenCells.size && this.hiddenCells.has(`${x},${y},${z}`)) return "";
+					if (
+						bounds?.enabled &&
+						(x < bounds.min.x ||
+							y < bounds.min.y ||
+							z < bounds.min.z ||
+							x >= bounds.max.x ||
+							y >= bounds.max.y ||
+							z >= bounds.max.z)
+					)
+						return "";
+					try {
+						// FULL state (method call — detaching the wasm method breaks `this`):
+						// get_block returns bare names, which hides waterlogged=true and
+						// level=N — the fluid classifier needs both
+						const w = schematicObject.schematicWrapper;
+						let s = w.get_block(x, y, z) || "";
+						if (s && !s.includes("[")) {
+							const bp = w.get_block_with_properties?.(x, y, z);
+							const pr = typeof bp?.properties === "function" ? bp.properties() : bp?.properties;
+							if (pr && Object.keys(pr).length) {
+								s += `[${Object.keys(pr)
+									.sort()
+									.map((k) => `${k}=${pr[k]}`)
+									.join(",")}]`;
+							}
+						}
+						return s;
+					} catch {
+						return "";
+					}
+				},
+				sx,
+				sy,
+				sz
+			);
+			for (const fm of fluid.meshes) {
+				fm.userData.fluidMesh = true;
+			}
+			if (fluid.bubbleCells.length) {
+				const { buildBubbleMesh } = await import("../meshing/BubbleColumns");
+				const texture = await this.schematicRenderer.cubane.getAssetLoader().getTexture("particle/bubble");
+				this.bubbleMesh = buildBubbleMesh(fluid.bubbleCells, texture);
+				if (this.bubbleMesh) fluid.meshes.push(this.bubbleMesh);
+			}
+			console.log(
+				`[FluidMesh] ${fluid.cells.toLocaleString()} fluid cells → ${fluid.meshes.length} meshes in ${fluid.ms.toFixed(0)}ms`
+			);
+			return fluid.meshes;
+		} catch (e) {
+			console.warn("[FluidMesh] failed, fluids will not render:", e);
+			return [];
+		}
+	}
+
 	/** Shared front half of the GPU build paths: palette precompute + grid extraction. */
-	private async extractGpuGrid(schematicObject: any): Promise<{
+	private async extractGpuGrid(schematicObject: any, fluidSurface = false): Promise<{
 		builder: any;
 		paletteData: any[];
 		materials: any[];
@@ -2005,7 +2058,7 @@ export class SchematicObject extends EventEmitter {
 			sy = dimsArr[1],
 			sz = dimsArr[2];
 		const palettes = this.getPalettes(schematic);
-		await this.worldMeshBuilder.precomputePaletteGeometries(palettes.default);
+		await this.worldMeshBuilder.precomputePaletteGeometries(palettes.default, fluidSurface);
 		const airIdx = new Set<number>();
 		(palettes.default || []).forEach((e: any, i: number) => {
 			if (e?.name === "minecraft:air" || e?.Name === "minecraft:air") airIdx.add(i);
@@ -2053,7 +2106,7 @@ export class SchematicObject extends EventEmitter {
 		// water renderer on raw un-normalized strip textures made bypass patches
 		// adjacent to record patches visibly darker ("water changes color")
 		const ENTITY_FAMILY =
-			/minecraft:(trapped_chest|ender_chest|chest|redstone_wire|kelp|seagrass)[\[\s]?/;
+			/minecraft:(trapped_chest|ender_chest|chest|redstone_wire|kelp|kelp_plant|seagrass|tall_seagrass)(\[|\s|$)/;
 		const entityPalette = new Set<number>();
 		(palettes.default || []).forEach((e: any, i: number) => {
 			if (ENTITY_FAMILY.test(e?.name || e?.Name || "")) entityPalette.add(i);
@@ -2124,7 +2177,7 @@ export class SchematicObject extends EventEmitter {
 
 		const palettes = this.getPalettes(schematic);
 		performanceMonitor.startOperation("Palette Precomputation");
-		await this.worldMeshBuilder.precomputePaletteGeometries(palettes.default);
+		await this.worldMeshBuilder.precomputePaletteGeometries(palettes.default, true);
 		performanceMonitor.endOperation("Palette Precomputation");
 
 		console.log(`[PhaseTiming] palette+t0: ${(performance.now() - __pt).toFixed(0)}ms`);
@@ -2230,6 +2283,8 @@ export class SchematicObject extends EventEmitter {
 				this.reportBuildProgress(`Batch processing chunks...`, progress, total, processed);
 			}
 		);
+
+		batchedMeshes.push(...(await this.buildFluidSurface(schematicObject)));
 
 		performanceMonitor.endOperation("Process All Chunks");
 
@@ -2467,7 +2522,12 @@ export class SchematicObject extends EventEmitter {
 				materials.forEach((mat) => {
 					if (mat) {
 						mat.opacity = this.opacity;
-						mat.transparent = needsTransparency;
+						if (mat instanceof THREE.ShaderMaterial && mat.userData.fluidAlpha !== undefined) {
+							mat.uniforms.uAlpha.value = mat.userData.fluidAlpha * this.opacity;
+							mat.transparent = needsTransparency || mat.userData.kind === "water";
+						} else {
+							mat.transparent = needsTransparency;
+						}
 					}
 				});
 			}

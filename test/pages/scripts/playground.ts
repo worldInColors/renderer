@@ -1,4 +1,5 @@
 import { SchematicRenderer } from "../../../src/SchematicRenderer";
+import { demoResourcePacks, ensureDemoResourcePacks } from "./demo-packs";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 
@@ -58,13 +59,7 @@ const renderer = new SchematicRenderer(
 		// diagonalCCA: () => Promise.resolve(base64ToArrayBuffer(diagonalCCA)),
 		ssDetector: () => Promise.resolve(base64ToArrayBuffer(ssDetector)),
 	},
-	{
-		// vanillaPack: async () => {
-		// 	const response = await fetch("/pack.zip");
-		// 	const buffer = await response.arrayBuffer();
-		// 	return new Blob([buffer], { type: "application/zip" });
-		// },
-	},
+	demoResourcePacks,
 
 	{
 		ffmpeg: ffmpeg,
@@ -131,6 +126,7 @@ const renderer = new SchematicRenderer(
 				console.log("Schematic dropped successfully:", file);
 			},
 			onRendererInitialized: async (renderer: SchematicRenderer) => {
+				await ensureDemoResourcePacks(renderer);
 				renderer.uiManager?.hideEmptyState();
 				// createDirtHouseSchematic(renderer, "dirtHouse");
 				// // renderer.schematicManager?.createEmptySchematic(

@@ -417,8 +417,9 @@ void main() {
  *  shared automatically by three's program cache). */
 /** Liquid animation frames as array-texture layers, registered by AssetLoader at
  * atlas build (fable design: hardware RepeatWrapping per layer — no atlas bleed). */
-export const liquidFrameTextures: { water: THREE.DataArrayTexture | null; lava: THREE.DataArrayTexture | null } = {
+export const liquidFrameTextures: { water: THREE.DataArrayTexture | null; waterFlow: THREE.DataArrayTexture | null; lava: THREE.DataArrayTexture | null } = {
 	water: null,
+	waterFlow: null,
 	lava: null,
 };
 
