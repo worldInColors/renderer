@@ -1,12 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ensureDemoResourcePacks } from "../../test/pages/scripts/demo-packs";
 import type { SchematicRenderer } from "../SchematicRenderer";
 
 function fixture(priority?: number, enabled = true) {
 	const vanilla = { id: "base", name: "vanillaPack", priority: 0, enabled: true };
-	const all = priority === undefined ? [vanilla] : [
-		vanilla, { id: "tweaks", name: "Redstone Tweaks", priority, enabled },
-	];
+	const all =
+		priority === undefined
+			? [vanilla]
+			: [vanilla, { id: "tweaks", name: "Redstone Tweaks", priority, enabled }];
 	const packs = {
 		getAllPacks: () => all,
 		getEnabledPacks: () => all.filter((pack) => pack.enabled),
@@ -20,12 +21,36 @@ function fixture(priority?: number, enabled = true) {
 	return { packs, run: () => ensureDemoResourcePacks({ packs } as unknown as SchematicRenderer) };
 }
 
+afterEach(() => {
+	vi.restoreAllMocks();
+	document.body.replaceChildren();
+});
+
 describe("shared demo resource packs", () => {
+	it.each(["404 Not Found", "Invalid zip"])(
+		"finishes page setup when the overlay fails: %s",
+		async (message) => {
+			const { packs, run } = fixture();
+			const error = new Error(message);
+			const log = vi.spyOn(console, "warn").mockImplementation(() => {});
+			packs.loadPackFromUrl.mockRejectedValue(error);
+			document.body.innerHTML = '<span id="pack-status">Loading textures…</span>';
+			await expect(run()).resolves.toBeUndefined();
+			expect(packs.endPackBatchUpdate).toHaveBeenCalledOnce();
+			expect(log).toHaveBeenCalledWith(
+				expect.stringContaining("Redstone Tweaks failed to load"),
+				error
+			);
+			expect(document.getElementById("pack-status")!.textContent).toBe("Textures: Vanilla");
+			expect(packs.onPackEvent).toHaveBeenCalledWith("packsChanged", expect.any(Function));
+		}
+	);
 	it("adds Redstone Tweaks above a previously cached vanilla pack", async () => {
 		const { packs, run } = fixture();
 		await run();
 		expect(packs.loadPackFromUrl).toHaveBeenCalledWith("packs/redstone-tweaks.zip", {
-			name: "Redstone Tweaks", priority: -1,
+			name: "Redstone Tweaks",
+			priority: -1,
 		});
 		expect(packs.endPackBatchUpdate).toHaveBeenCalledOnce();
 	});

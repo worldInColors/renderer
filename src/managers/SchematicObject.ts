@@ -1962,20 +1962,12 @@ export class SchematicObject extends EventEmitter {
 		try {
 			const { buildFluidMeshes, setFluidTextures, hasFluid } =
 				await import("../meshing/WaterMesher");
+			const { fluidPaletteStates, createFluidStateLookup } =
+				await import("../meshing/FluidStateLookup");
 			const palette = this.getPalettes(schematicObject.schematicWrapper).default;
-			if (
-				!palette.some((entry: any) => {
-					const props = entry.properties || {};
-					return hasFluid(
-						`${entry.name || entry.Name}[${Object.entries(props)
-							.map(([k, v]) => `${k}=${v}`)
-							.join(",")}]`
-					);
-				})
-			)
-				return [];
+			const states = fluidPaletteStates(palette);
+			if (!states.some(hasFluid)) return [];
 			const [sx, sy, sz] = schematicObject.schematicWrapper.get_dimensions();
-			const bounds = schematicObject.renderingBounds;
 			try {
 				// the frame array registry is a module export, not a global — hand it
 				// to the fluid material factory explicitly
@@ -1984,44 +1976,18 @@ export class SchematicObject extends EventEmitter {
 			} catch {
 				/* tryBind falls back lazily */
 			}
-			const fluid = buildFluidMeshes(
-				(x: number, y: number, z: number) => {
-					if (this.hiddenCells.size && this.hiddenCells.has(`${x},${y},${z}`)) return "";
-					if (
-						bounds?.enabled &&
-						(x < bounds.min.x ||
-							y < bounds.min.y ||
-							z < bounds.min.z ||
-							x >= bounds.max.x ||
-							y >= bounds.max.y ||
-							z >= bounds.max.z)
-					)
-						return "";
-					try {
-						// FULL state (method call — detaching the wasm method breaks `this`):
-						// get_block returns bare names, which hides waterlogged=true and
-						// level=N — the fluid classifier needs both
-						const w = schematicObject.schematicWrapper;
-						let s = w.get_block(x, y, z) || "";
-						if (s && !s.includes("[")) {
-							const bp = w.get_block_with_properties?.(x, y, z);
-							const pr = typeof bp?.properties === "function" ? bp.properties() : bp?.properties;
-							if (pr && Object.keys(pr).length) {
-								s += `[${Object.keys(pr)
-									.sort()
-									.map((k) => `${k}=${pr[k]}`)
-									.join(",")}]`;
-							}
-						}
-						return s;
-					} catch {
-						return "";
-					}
-				},
+			const getBlock = createFluidStateLookup(
+				schematicObject.schematicWrapper,
+				states,
 				sx,
 				sy,
-				sz
+				sz,
+				{
+					bounds: schematicObject.renderingBounds,
+					hiddenCells: this.hiddenCells,
+				}
 			);
+			const fluid = buildFluidMeshes(getBlock, sx, sy, sz);
 			for (const fm of fluid.meshes) {
 				fm.userData.fluidMesh = true;
 			}

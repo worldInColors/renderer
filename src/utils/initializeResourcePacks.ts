@@ -24,7 +24,13 @@ export async function initializeResourcePacks(
 	cubane.beginPackBatchUpdate();
 	try {
 		await cubane.removeAllPacks();
-		for (const pack of desired) await cubane.loadResourcePack(pack.blob);
+		for (const pack of desired) {
+			try {
+				await cubane.loadResourcePack(pack.blob);
+			} catch (error) {
+				console.error(`[ResourcePacks] Failed to load ${pack.name}:`, error);
+			}
+		}
 	} finally {
 		await cubane.endPackBatchUpdate();
 	}
