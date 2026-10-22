@@ -921,7 +921,40 @@ export class ResourcePackManager {
 	/**
 	 * Manually trigger atlas rebuild
 	 */
-	public async rebuildPackAtlas(): Promise<void> {
+	// Atlas rebuilds are DEBOUNCED + SERIALIZED: boot fires one trigger per
+	// pack-added and they used to run CONCURRENTLY — a partial atlas (fewer
+	// packs indexed at walk time) could finish last and clobber the complete
+	// build, leaving every texture added by the newer pack black.
+	private _rebuildDebounce: ReturnType<typeof setTimeout> | null = null;
+	private _rebuildChain: Promise<void> = Promise.resolve();
+	private _lastRebuildKey = "";
+
+	private _rebuildKey(): string {
+		return this.getEnabledPacks()
+			.map((p: any) => `${p.id}:${p.hash ?? ""}`)
+			.sort()
+			.join("|");
+	}
+
+	public rebuildPackAtlas(): Promise<void> {
+		if (this._rebuildDebounce) clearTimeout(this._rebuildDebounce);
+		return new Promise<void>((resolve) => {
+			this._rebuildDebounce = setTimeout(() => {
+				this._rebuildDebounce = null;
+				const key = this._rebuildKey();
+				const chained = this._rebuildChain.then(async () => {
+					if (!this.onAtlasRebuild) return;
+					if (key === this._lastRebuildKey) return; // same pack set already built
+					this._lastRebuildKey = key;
+					await this._doRebuildPackAtlas();
+				});
+				this._rebuildChain = chained.catch(() => {});
+				chained.then(resolve, resolve);
+			}, 250);
+		});
+	}
+
+	private async _doRebuildPackAtlas(): Promise<void> {
 		console.log(
 			"[ResourcePackManager] rebuildPackAtlas called, callback set:",
 			!!this.onAtlasRebuild

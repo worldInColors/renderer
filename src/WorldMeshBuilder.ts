@@ -549,6 +549,17 @@ export class WorldMeshBuilder {
 			try {
 				// Get geometry from Cubane (Main Thread)
 				const cubaneObj = await this.cubane.getBlockMesh(blockString, biome, true);
+				if (cubaneObj) {
+					let anyTrans = false;
+					cubaneObj.traverse((o: any) => {
+						if (anyTrans || !o.isMesh) return;
+						const mats = Array.isArray(o.material) ? o.material : [o.material];
+						if (mats.some((mm: any) => mm && (mm.transparent || (mm.alphaTest ?? 0) > 0)))
+							anyTrans = true;
+					});
+					if (anyTrans)
+						this.modelTransparentNames.add(blockState?.name || blockString.split("[")[0]);
+				}
 				const extractedGeometries = cubaneObj
 					? this.extractAllMeshData(cubaneObj)
 					: this.extractAllMeshData(this.createFallbackObject3D(blockString));
@@ -1490,8 +1501,7 @@ export class WorldMeshBuilder {
 			if (blockEntityMap.size > 0 && blockEntityMap.size < 10000) {
 				// Use spatial cache if available, otherwise build it once
 				let spatialCache = (schematicObject as any)._entitySpatialCache as
-					| Map<string, any[]>
-					| undefined;
+					Map<string, any[]> | undefined;
 
 				if (!spatialCache) {
 					spatialCache = new Map<string, any[]>();
@@ -1859,6 +1869,13 @@ export class WorldMeshBuilder {
 		"minecraft:bubble_column",
 	]);
 
+	// Block names whose CUBANE MODEL carries any transparent/alphaTest material —
+	// the record path's solid pass is discard-free (early-Z), so cutout blocks
+	// (flowers, saplings, bars, torches...) must route to the transparent pass.
+	// Populated during precomputePaletteGeometries from the actual model data;
+	// the old hardcoded glass/leaves/ice list missed every other cutout block.
+	private modelTransparentNames = new Set<string>();
+
 	private getBlockCategory(
 		blockName: string,
 		properties?: Record<string, string>,
@@ -1874,6 +1891,7 @@ export class WorldMeshBuilder {
 		) {
 			return "water";
 		}
+		if (this.modelTransparentNames.has(blockName)) return "transparent";
 		if (
 			blockName.includes("glass") ||
 			blockName.includes("leaves") ||
