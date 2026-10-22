@@ -1267,17 +1267,32 @@ export class ResourcePackManager {
 	): Promise<Blob[]> {
 		await this.ensureDbInitialized();
 
-		// Load default packs that don't exist
+		// Default packs: ALWAYS fetch + hash-compare. The old `if (!existingPack)`
+		// guard cached the default pack forever — replacing pack.zip on the server
+		// never reached warm sessions, so every new-block texture went black for
+		// returning visitors. Unchanged packs cost a conditional request (304/etag).
 		for (const [name, callback] of Object.entries(defaultPacks)) {
 			const existingPack = this.getPackByName(name);
-			if (!existingPack) {
-				try {
+			try {
+				const blob = await callback();
+				const newHash = await hashBlob(blob);
+				if (!existingPack) {
 					console.log(`Fetching default pack ${name}`);
-					const blob = await callback();
 					await this.loadPackFromBlob(blob, name);
-				} catch (error) {
-					console.error(`Failed to fetch default pack ${name}:`, error);
+				} else if (existingPack.hash !== newHash) {
+					console.log(
+						`[ResourcePackManager] default pack ${name} changed on the server — replacing (${(existingPack.hash || "").slice(0, 8)} -> ${newHash.slice(0, 8)})`
+					);
+					const keepPriority = existingPack.priority;
+					const wasEnabled = existingPack.enabled;
+					await this.removePack(existingPack.id);
+					await this.loadPackFromBlob(blob, name, {
+						priority: keepPriority,
+						enabled: wasEnabled,
+					});
 				}
+			} catch (error) {
+				console.error(`Failed to fetch default pack ${name}:`, error);
 			}
 		}
 

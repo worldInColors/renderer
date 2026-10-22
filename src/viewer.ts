@@ -66,7 +66,11 @@ export class SchematicViewer {
 		const packUrl = this.options.vanillaPackUrl;
 		if (packUrl) {
 			defaultPacks.vanillaPack = async () => {
-				const res = await fetch(packUrl);
+				// cache: "no-cache" — revalidate with the server's etag on every boot.
+				// The default pack is hash-compared against the stored blob (see
+				// ResourcePackManager), but that comparison is useless if fetch()
+				// serves a stale pack.zip from the browser HTTP cache (max-age).
+				const res = await fetch(packUrl, { cache: "no-cache" });
 				if (!res.ok) throw new Error(`vanillaPack fetch failed: ${res.status}`);
 				return await res.blob();
 			};
